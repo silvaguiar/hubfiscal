@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NF-e Manager — Consulta SEFAZ</title>
+  <meta name="description" content="Sistema de consulta de Notas Fiscais Eletrônicas via SEFAZ">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* ── Empresa Cards ─────────────────────────────── */
+    .empresas-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .empresas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .empresa-card {
+      background: var(--card-bg, #1a2035);
+      border: 1px solid var(--border, rgba(255,255,255,.07));
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .empresa-card:hover {
+      border-color: rgba(99,102,241,.4);
+      box-shadow: 0 4px 24px rgba(99,102,241,.1);
+    }
+    .empresa-card.ativa { border-color: rgba(16,185,129,.3); }
+    .empresa-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .empresa-card-info h4 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text, #e2e8f0);
+      margin: 0 0 4px;
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .empresa-card-info .cnpj-badge {
+      font-size: 12px;
+      color: var(--text-muted, #64748b);
+      font-family: monospace;
+    }
+    .empresa-card-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .empresa-card-actions button {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      transition: all .2s;
+      display: flex;
+      align-items: center;
+    }
+    .empresa-card-actions button:hover { background: rgba(99,102,241,.15); color: #818cf8; }
+    .empresa-card-actions button.danger:hover { background: rgba(239,68,68,.15); color: #f87171; }
+    .empresa-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .meta-chip {
+      background: rgba(255,255,255,.06);
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .meta-chip.prod { background: rgba(16,185,129,.12); color: #34d399; }
+    .meta-chip.homo { background: rgba(245,158,11,.12); color: #fbbf24; }
+    .meta-chip.cert-ok { background: rgba(99,102,241,.12); color: #818cf8; }
+    .meta-chip.cert-no { background: rgba(239,68,68,.1); color: #f87171; }
+    .empresa-nsu {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      font-family: monospace;
+    }
+    .empresa-card-footer {
+      display: flex;
+      gap: 8px;
+    }
+    .empresa-card-footer button {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      transition: all .2s;
+    }
+    .btn-sync-empresa {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: #fff;
+    }
+    .btn-sync-empresa:hover { opacity: .88; transform: translateY(-1px); }
+    .btn-sync-empresa:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .btn-cert-empresa {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.1) !important;
+      color: var(--text-muted);
+    }
+    .btn-cert-empresa:hover { background: rgba(255,255,255,.1); color: var(--text); }
+    /* ── Modal Empresa ─────────────────────────────── */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1000; align-items:center; justify-content:center; }
+    .modal-overlay.active { display:flex; }
+    .modal-empresa {
+      background: #131929;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 16px;
+      padding: 28px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    }
+    .modal-empresa h3 { font-size: 18px; margin: 0 0 20px; }
+    /* ── Cert upload inline ─────────────────────────── */
+    .cert-inline {
+      border: 1.5px dashed rgba(255,255,255,.1);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s;
+      margin-bottom: 12px;
+    }
+    .cert-inline:hover { border-color: #6366f1; }
+    .cert-inline span.material-icons-round { font-size: 28px; color: #6366f1; display: block; margin-bottom: 6px; }
+    .cert-inline p { font-size: 13px; color: var(--text-muted); margin: 0; }
+    /* ── Sync status per card ──────────────────────── */
+    .sync-result {
+      margin-top: 10px;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    .sync-result.show { display: block; }
+    .sync-result.ok { background: rgba(16,185,129,.1); color: #34d399; }
+    .sync-result.warn { background: rgba(245,158,11,.1); color: #fbbf24; }
+    .sync-result.err { background: rgba(239,68,68,.1); color: #f87171; }
+    /* ── Empty state ───────────────────────────────── */
+    .empty-empresas {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-empresas .material-icons-round { font-size: 56px; opacity: .3; display: block; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="material-icons-round brand-icon">receipt_long</span>
+      <h1>NF-e<span>Manager</span></h1>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard">
+        <span class="material-icons-round">dashboard</span>Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="notas">
+        <span class="material-icons-round">description</span>Notas Fiscais
+      </a>
+      <a href="#" class="nav-item" data-page="importador_nfs">
+        <span class="material-icons-round">cloud_download</span>Importador de NFs
+      </a>
+      <a href="#" class="nav-item" data-page="exportar">
+        <span class="material-icons-round">file_download</span>Exportar
+      </a>
+      <a href="#" class="nav-item" data-page="config">
+        <span class="material-icons-round">settings</span>Configurações
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Desconectado</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <header class="top-bar">
+      <button class="menu-toggle" id="menuToggle">
+        <span class="material-icons-round">menu</span>
+      </button>
+      <div class="top-bar-right">
+        <span class="env-badge" id="envBadge">PRODUÇÃO</span>
+      </div>
+    </header>
+
+    <!-- Dashboard Page -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-header">
+        <h2>Dashboard</h2>
+        <p class="page-subtitle">Visão geral das notas fiscais</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card stat-total">
+          <div class="stat-icon"><span class="material-icons-round">inventory_2</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statTotal">0</span>
+            <span class="stat-label">Total de Notas</span>
+          </div>
+        </div>
+        <div class="stat-card stat-entradas">
+          <div class="stat-icon"><span class="material-icons-round">call_received</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statEntradas">0</span>
+            <span class="stat-label">Entradas</span>
+            <span class="stat-sub" id="statEntradasValor">R$ 0,00</span>
+          </div>
+        </div>
+        <div class="stat-card stat-saidas">
+          <div class="stat-icon"><span class="material-icons-round">call_made</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statSaidas">0</span>
+            <span class="stat-label">Saídas</span>
+            <span class="stat-sub" id="statSaidasValor">R$ 0,00</span>
+          </div>
+        </div>
+        <div class="stat-card stat-sync">
+          <div class="stat-icon"><span class="material-icons-round">sync</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statSync">—</span>
+            <span class="stat-label">Última Importação</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Últimas Notas</h3></div>
+        <div class="table-wrap">
+          <table id="dashboardTable">
+            <thead>
+              <tr>
+                <th>Nº NF</th><th>Data</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Notas Page -->
+    <section class="page" id="page-notas">
+      <div class="page-header">
+        <h2>Notas Fiscais</h2>
+        <p class="page-subtitle">Todas as notas importadas</p>
+      </div>
+      <div class="filters-bar">
+        <div class="filter-group">
+          <select id="filterEmpresa" class="input-field">
+            <option value="">Todas as Empresas</option>
+          </select>
+          <select id="filterTipo" class="input-field">
+            <option value="todos">Todos (Entrada/Saída)</option>
+            <option value="entrada">Entradas</option>
+            <option value="saida">Saídas</option>
+          </select>
+          <select id="filterModelo" class="input-field">
+            <option value="todos">Todos Modelos</option>
+            <option value="55">NF-e (55)</option>
+            <option value="65">NFC-e (65)</option>
+            <option value="57">CT-e (57)</option>
+          </select>
+          <input type="date" id="filterDataInicio" class="input-field">
+          <input type="date" id="filterDataFim" class="input-field">
+          <input type="text" id="filterBusca" class="input-field search-input" placeholder="Buscar por NF, CNPJ, nome...">
+          <button class="btn btn-primary" onclick="app.loadNotas()">
+            <span class="material-icons-round">search</span>Filtrar
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nº NF</th><th>Data Emissão</th><th>Chave de Acesso</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th><th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="notasTableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </section>
+
+    <!-- Importador de NFs Page (UNIFICADA) -->
+    <section class="page" id="page-importador_nfs">
+      <div class="page-header">
+        <h2>Importador de Notas Fiscais</h2>
+        <p class="page-subtitle">Central de importação: SEFAZ (Entradas), TOTVS (Saídas) e Manual</p>
+      </div>
+
+      <div class="import-grid-hub">
+        
+        <!-- SEÇÃO: ENTRADAS (SEFAZ) -->
+        <div class="card hub-card">
+          <div class="hub-card-header">
+            <span class="material-icons-round">cloud_sync</span>
+            <h3>Entradas (SEFAZ Nacional)</h3>
+          </div>
+          <p>Busca automática de notas emitidas contra seus CNPJs usando Certificado Digital A1.</p>
+          <div class="form-group">
+            <label>Selecione a Empresa</label>
+            <select id="syncEmpresaHub" class="input-field"></select>
+          </div>
+          <div id="syncStatusHub" class="import-status"></div>
+          <button class="btn btn-primary w-full" onclick="app.sincronizarHub()">
+            <span class="material-icons-round">sync</span>Sincronizar Entradas
+          </button>
+        </div>
+
+        <!-- SEÇÃO: SAÍDAS (TOTVS / ERP) -->
+        <div class="card hub-card highlight">
+          <div class="hub-card-header">
+            <span class="material-icons-round">api</span>
+            <h3>Saídas (TOTVS / ERP)</h3>
+          </div>
+          <p>Extração de notas emitidas (NFC-e/NF-e) diretamente da API TOTVS Moda.</p>
+          <div class="form-group">
+            <label>Selecione a Empresa</label>
+            <select id="totvsEmpresaHub" class="input-field"></select>
+          </div>
+          <div class="form-group">
+            <label>Mês de Referência</label>
+            <input type="month" id="totvsMesHub" class="input-field">
+          </div>
+          <div id="totvsLogHub" class="totvs-log-terminal"></div>
+          <button class="btn btn-primary w-full" onclick="app.dispararTotvsHub()">
+            <span class="material-icons-round">bolt</span>Disparar Robô TOTVS
+          </button>
+        </div>
+
+        <!-- SEÇÃO: UPLOAD MANUAL -->
+        <div class="card hub-card">
+          <div class="hub-card-header">
+            <span class="material-icons-round">upload_file</span>
+            <h3>Upload Manual (XML / ZIP)</h3>
+          </div>
+          <p>Importe arquivos XML ou ZIP exportados manualmente de outros sistemas.</p>
+          
+          <div class="form-group">
+            <label>Empresa Destino (Opcional)</label>
+            <select id="manualEmpresaHub" class="input-field"></select>
+            <small style="color:var(--text-muted); font-size:11px">ℹ️ Se vazio, o sistema detectará a empresa pelo CNPJ no XML.</small>
+          </div>
+          
+          <div id="dropZoneHub" class="drop-zone" onclick="document.getElementById('fileHub').click()">
+            <span class="material-icons-round">cloud_upload</span>
+            <p>Arraste XMLs ou ZIP aqui</p>
+            <input type="file" id="fileHub" multiple accept=".xml,.zip" hidden onchange="app.importarManualHub(event)">
+          </div>
+          
+          <div id="uploadStatusHub" class="upload-status"></div>
+          
+          <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px">
+            <label style="font-size:12px; color:var(--text-muted)">Ou cole o XML da nota abaixo:</label>
+            <textarea id="xmlPasteHub" class="input-field" rows="3" placeholder="Cole aqui o conteúdo XML..."></textarea>
+            <button class="btn btn-secondary w-full" style="margin-top:8px" onclick="app.importarXmlPasteHub()">
+              <span class="material-icons-round">content_paste</span>Importar Texto
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Exportar Page -->
+    <section class="page" id="page-exportar">
+      <div class="page-header">
+        <h2>Exportar Dados</h2>
+        <p class="page-subtitle">Exporte as notas fiscais em diversos formatos</p>
+      </div>
+      <div class="export-filters card">
+        <h3>Filtros de Exportação</h3>
+        <div class="filter-group">
+          <select id="exportEmpresa" class="input-field">
+            <option value="">Todas as Empresas</option>
+          </select>
+          <select id="exportTipo" class="input-field">
+            <option value="todos">Todos</option>
+            <option value="entrada">Entradas</option>
+            <option value="saida">Saídas</option>
+          </select>
+          <input type="date" id="exportDataInicio" class="input-field">
+          <input type="date" id="exportDataFim" class="input-field">
+        </div>
+      </div>
+      <div class="export-grid">
+        <button class="export-card" onclick="app.exportar('xlsx')">
+          <span class="material-icons-round">grid_on</span>
+          <strong>Excel (.xlsx)</strong><span>Planilha formatada</span>
+        </button>
+        <button class="export-card" onclick="app.exportar('csv')">
+          <span class="material-icons-round">table_rows</span>
+          <strong>CSV</strong><span>Separado por ponto e vírgula</span>
+        </button>
+        <button class="export-card" onclick="app.exportar('json')">
+          <span class="material-icons-round">data_object</span>
+          <strong>JSON</strong><span>Dados estruturados</span>
+        </button>
+        <button class="export-card" onclick="app.exportar('xml')">
+          <span class="material-icons-round">code</span>
+          <strong>XML</strong><span>XMLs completos das NF-e</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Config Page -->
+    <section class="page" id="page-config">
+      <div class="page-header">
+        <div class="empresas-header">
+          <div>
+            <h2 style="margin:0">Empresas Cadastradas</h2>
+            <p class="page-subtitle" style="margin:4px 0 0">Gerencie os CNPJs e certificados digitais</p>
+          </div>
+          <div style="display:flex; gap:10px">
+
+            <button class="btn btn-secondary" onclick="app.abrirModalTotvsConfig()">
+              <span class="material-icons-round">settings_input_component</span>Configurar ERP Global
+            </button>
+            <button class="btn btn-primary" onclick="app.abrirModalEmpresa()">
+              <span class="material-icons-round">add_business</span>Nova Empresa
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="empresas-grid" id="empresasGrid">
+        <div class="empty-empresas">
+          <span class="material-icons-round">business</span>
+          <p>Nenhuma empresa cadastrada</p>
+          <p style="font-size:13px">Clique em "Nova Empresa" para começar</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal XML Viewer -->
+  <div class="modal-overlay" id="xmlModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>XML da NF-e</h3>
+        <button class="modal-close" onclick="app.closeModal()">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <pre class="xml-viewer" id="xmlViewer"></pre>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btnDownloadXml">
+          <span class="material-icons-round">download</span>Download XML
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Empresa -->
+  <div class="modal-overlay" id="modalEmpresa">
+    <div class="modal-empresa">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h3 style="margin:0" id="modalEmpresaTitulo">Nova Empresa</h3>
+        <button onclick="app.fecharModalEmpresa()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+
+      <input type="hidden" id="modalEmpresaId">
+
+      <div class="form-group">
+        <label>Tipo</label>
+        <div style="display:flex;gap:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;transition:all .2s" id="tipoMatrizLabel">
+            <input type="radio" name="modalTipo" id="modalTipoMatriz" value="matriz" checked style="accent-color:#6366f1">
+            <span>🏢 Matriz</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;transition:all .2s" id="tipoFilialLabel">
+            <input type="radio" name="modalTipo" id="modalTipoFilial" value="filial" style="accent-color:#6366f1">
+            <span>🏪 Filial</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Seleção de Matriz (só para Filial) -->
+      <div class="form-group" id="modalMatrizGroup" style="display:none">
+        <label>Usar certificado da Matriz ★</label>
+        <select id="modalMatrizId" class="input-field">
+          <option value="">Selecione a matriz...</option>
+        </select>
+        <small style="color:#818cf8;font-size:11px;margin-top:4px;display:block">ℹ️ A filial usará o certificado digital da matriz selecionada para comunicação com a SEFAZ.</small>
+      </div>
+
+      <div class="form-group">
+        <label>CNPJ *</label>
+        <input type="text" id="modalCnpj" class="input-field" placeholder="00.000.000/0000-00" maxlength="18">
+      </div>
+      <div class="form-group">
+        <label>Razão Social</label>
+        <input type="text" id="modalRazaoSocial" class="input-field" placeholder="Nome da empresa">
+      </div>
+      <div class="form-group">
+        <label>Nome Fantasia <small style="color:var(--text-muted);font-weight:400">(apelido / filial)</small></label>
+        <input type="text" id="modalNomeFantasia" class="input-field" placeholder="Ex: Matriz, Filial Centro, Loja 02...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>UF</label>
+          <select id="modalUf" class="input-field">
+            <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+            <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+            <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+            <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+            <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+            <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+            <option selected>SP</option><option>SE</option><option>TO</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Ambiente</label>
+          <select id="modalAmbiente" class="input-field">
+            <option value="producao">Produção</option>
+            <option value="homologacao">Homologação</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Certificado (só para Matriz) -->
+      <div id="modalCertSection" style="display:none">
+        <div class="cert-inline" onclick="document.getElementById('modalCertInput').click()">
+          <span class="material-icons-round">upload_file</span>
+          <p id="modalCertNome">Clique para selecionar o certificado .pfx</p>
+          <input type="file" id="modalCertInput" accept=".pfx" hidden>
+        </div>
+        <div class="form-group">
+          <label>Senha do Certificado</label>
+          <input type="password" id="modalSenha" class="input-field" placeholder="Senha do arquivo .pfx">
+        </div>
+      </div>
+
+      <!-- Configuração TOTVS -->
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05)">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px">
+          <input type="checkbox" id="modalTotvsAtivo" style="width:18px; height:18px">
+          <label for="modalTotvsAtivo" style="font-weight:600; cursor:pointer">Ativar Integração TOTVS</label>
+        </div>
+        <div id="modalTotvsFields" style="display:none">
+          <div class="form-group">
+            <label>Código da Filial (Branch) no TOTVS</label>
+            <input type="text" id="modalTotvsBranch" class="input-field" placeholder="Ex: 1">
+            <small style="color:var(--text-muted); font-size:11px">ℹ️ As credenciais de acesso (Client ID/URL) são globais e configuradas no menu Empresas.</small>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:20px">
+        <button class="btn btn-primary" style="flex:1" onclick="app.salvarEmpresa()">
+          <span class="material-icons-round">save</span>Salvar
+        </button>
+        <button class="btn btn-secondary" onclick="app.fecharModalEmpresa()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Configuração TOTVS Global -->
+  <div class="modal-overlay" id="modalTotvsConfig">
+    <div class="modal-empresa" style="max-width:600px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <h3 style="margin:0">Configuração Global ERP (TOTVS)</h3>
+          <p style="font-size:13px;color:var(--text-muted);margin:4px 0 0">Credenciais compartilhadas por todas as empresas do grupo.</p>
+        </div>
+        <button onclick="app.fecharModalTotvsConfig()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label>Base URL TOTVS</label>
+        <input type="text" id="globalTotvsUrl" class="input-field" placeholder="Ex: https://www30.bhan.com.br:9443">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Usuário API</label>
+          <input type="text" id="globalTotvsUser" class="input-field">
+        </div>
+        <div class="form-group">
+          <label>Senha API</label>
+          <input type="password" id="globalTotvsPassword" class="input-field">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Client ID</label>
+          <input type="text" id="globalTotvsClientId" class="input-field">
+        </div>
+        <div class="form-group">
+          <label>Client Secret</label>
+          <input type="password" id="globalTotvsClientSecret" class="input-field">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Grant Type</label>
+        <select id="globalTotvsGrantType" class="input-field">
+          <option value="password">password</option>
+          <option value="client_credentials">client_credentials</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="app.salvarTotvsConfigGlobal()">
+          <span class="material-icons-round">save</span>Salvar Configuração ERP
+        </button>
+        <button class="btn btn-secondary" onclick="app.fecharModalTotvsConfig()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
