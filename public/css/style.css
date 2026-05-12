@@ -540,3 +540,30 @@ select.input-field { cursor: pointer; }
 
 .upload-status { margin-top: 10px; font-size: 0.85rem; }
 
+/* ── Domínio Status Badges ─────────────────────────── */
+.dom-pendente {
+  background: rgba(100, 116, 139, 0.12);
+  color: #94a3b8;
+}
+.dom-enviado {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+.dom-erro {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  cursor: help;
+}
+.dom-enviando {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Grid Utility ──────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }

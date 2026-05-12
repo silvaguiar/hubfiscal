@@ -161,7 +161,22 @@ async function initialize() {
     { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_client_id TEXT DEFAULT ''", msg: 'totvs_client_id em config' },
     { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_client_secret TEXT DEFAULT ''", msg: 'totvs_client_secret em config' },
     { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_grant_type TEXT DEFAULT 'password'", msg: 'totvs_grant_type em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_token TEXT DEFAULT ''", msg: 'totvs_token em config' }
+    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_token TEXT DEFAULT ''", msg: 'totvs_token em config' },
+    // ── Domínio (Thomson Reuters) ──
+    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_status TEXT DEFAULT 'pendente'", msg: 'dominio_status em notas_fiscais' },
+    { sql: 'ALTER TABLE notas_fiscais ADD COLUMN dominio_enviado_em TEXT', msg: 'dominio_enviado_em em notas_fiscais' },
+    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_erro TEXT DEFAULT ''", msg: 'dominio_erro em notas_fiscais' },
+    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_batch_id TEXT DEFAULT ''", msg: 'dominio_batch_id em notas_fiscais' },
+    { sql: "ALTER TABLE empresas ADD COLUMN dominio_client_id TEXT DEFAULT ''", msg: 'dominio_client_id em empresas' },
+    { sql: "ALTER TABLE empresas ADD COLUMN dominio_client_secret TEXT DEFAULT ''", msg: 'dominio_client_secret em empresas' },
+    { sql: "ALTER TABLE empresas ADD COLUMN dominio_integration_key TEXT DEFAULT ''", msg: 'dominio_integration_key em empresas' },
+    { sql: 'ALTER TABLE empresas ADD COLUMN dominio_ativo INTEGER DEFAULT 0', msg: 'dominio_ativo em empresas' },
+    { sql: "ALTER TABLE empresas ADD COLUMN dominio_auth_url TEXT DEFAULT ''", msg: 'dominio_auth_url em empresas' },
+    { sql: "ALTER TABLE empresas ADD COLUMN dominio_api_url TEXT DEFAULT ''", msg: 'dominio_api_url em empresas' },
+    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_client_id TEXT DEFAULT ''", msg: 'dominio_client_id em config' },
+    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_client_secret TEXT DEFAULT ''", msg: 'dominio_client_secret em config' },
+    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_auth_url TEXT DEFAULT ''", msg: 'dominio_auth_url em config' },
+    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_api_url TEXT DEFAULT ''", msg: 'dominio_api_url em config' }
   ];
   migracoes.forEach(({ sql, msg }) => {
     try { conn.run(sql); console.log('✅ Migração: ' + msg); } catch (_) {}
@@ -326,15 +341,18 @@ function createEmpresa(data) {
   const tipo = data.tipo === 'filial' ? 'filial' : 'matriz';
   const matrizId = tipo === 'filial' && data.matriz_id ? parseInt(data.matriz_id) : null;
   runSql(`
-    INSERT INTO empresas (cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_nome, certificado_senha, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO empresas (cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_nome, certificado_senha, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo, dominio_client_id, dominio_client_secret, dominio_integration_key, dominio_ativo, dominio_auth_url, dominio_api_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [cnpj, data.razao_social || '', data.nome_fantasia || '', tipo, matrizId,
       data.uf || 'SP', data.ambiente || 'producao',
       data.certificado_nome || '', data.certificado_senha || '',
       data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '',
       data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_branch || '',
       data.totvs_grant_type || 'password',
-      data.totvs_ativo || 0]);
+      data.totvs_ativo || 0,
+      data.dominio_client_id || '', data.dominio_client_secret || '',
+      data.dominio_integration_key || '', data.dominio_ativo || 0,
+      data.dominio_auth_url || '', data.dominio_api_url || '']);
   return getEmpresaByCnpj(cnpj);
 }
 
@@ -352,6 +370,8 @@ function updateEmpresa(id, data) {
       certificado_senha = COALESCE(NULLIF(?, ''), certificado_senha),
       totvs_base_url = ?, totvs_user = ?, totvs_password = ?, totvs_token = ?, 
       totvs_client_id = ?, totvs_client_secret = ?, totvs_branch = ?, totvs_grant_type = ?, totvs_ativo = ?,
+      dominio_client_id = ?, dominio_client_secret = ?, dominio_integration_key = ?, dominio_ativo = ?,
+      dominio_auth_url = ?, dominio_api_url = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `, [
@@ -372,6 +392,12 @@ function updateEmpresa(id, data) {
     data.totvs_branch !== undefined ? data.totvs_branch : existing.totvs_branch,
     data.totvs_grant_type !== undefined ? data.totvs_grant_type : existing.totvs_grant_type,
     data.totvs_ativo !== undefined ? data.totvs_ativo : existing.totvs_ativo,
+    data.dominio_client_id !== undefined ? data.dominio_client_id : existing.dominio_client_id,
+    data.dominio_client_secret !== undefined ? data.dominio_client_secret : existing.dominio_client_secret,
+    data.dominio_integration_key !== undefined ? data.dominio_integration_key : existing.dominio_integration_key,
+    data.dominio_ativo !== undefined ? data.dominio_ativo : existing.dominio_ativo,
+    data.dominio_auth_url !== undefined ? data.dominio_auth_url : existing.dominio_auth_url,
+    data.dominio_api_url !== undefined ? data.dominio_api_url : existing.dominio_api_url,
     id
   ]);
   return getEmpresaById(id);
@@ -482,7 +508,8 @@ function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, pagina 
   const notas = queryAll(`
     SELECT id, empresa_id, chave_acesso, numero_nf, serie, data_emissao, valor_total,
            emitente_cnpj, emitente_nome, destinatario_cnpj, destinatario_nome,
-           tipo, situacao, nsu, schema_type, created_at
+           tipo, situacao, nsu, schema_type, created_at,
+           dominio_status, dominio_enviado_em, dominio_erro
     FROM notas_fiscais ${whereClause}
     ORDER BY data_emissao DESC, id DESC
     LIMIT ? OFFSET ?
@@ -545,6 +572,81 @@ function saveUfConfig(uf, portal_url, ativo) {
   `, [uf, portal_url, ativo]);
 }
 
+// ── Domínio (Thomson Reuters) ───────────────────────────
+
+function updateDominioStatus(notaId, status, erro = null, batchId = null) {
+  const now = status === 'enviado' ? new Date().toISOString() : null;
+  runSql(`
+    UPDATE notas_fiscais SET
+      dominio_status = ?,
+      dominio_enviado_em = COALESCE(?, dominio_enviado_em),
+      dominio_erro = ?,
+      dominio_batch_id = COALESCE(?, dominio_batch_id),
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [status, now, erro || '', batchId, notaId]);
+}
+
+function getNotasParaDominio(empresaId, filtros = {}) {
+  let where = ['empresa_id = ?'];
+  let params = [empresaId];
+
+  // Se não for reenvio, pega apenas pendentes
+  if (!filtros.reenviar) {
+    where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)");
+  } else {
+    where.push("(dominio_status = 'erro')");
+  }
+
+  // Filtros opcionais
+  if (filtros.dataInicio) { where.push('data_emissao >= ?'); params.push(filtros.dataInicio); }
+  if (filtros.dataFim) { where.push('data_emissao <= ?'); params.push(filtros.dataFim + 'T23:59:59'); }
+  if (filtros.tipo && filtros.tipo !== 'todos') { where.push('tipo = ?'); params.push(filtros.tipo); }
+
+  const whereClause = 'WHERE ' + where.join(' AND ');
+  return queryAll(`SELECT * FROM notas_fiscais ${whereClause} ORDER BY data_emissao DESC`, params);
+}
+
+function getDominioStats(empresaId = null) {
+  const filtro = empresaId ? `WHERE empresa_id = ${empresaId}` : '';
+  const total = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
+  const enviadas = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'enviado'" : "WHERE dominio_status = 'enviado'"}`);
+  const pendentes = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND (dominio_status = 'pendente' OR dominio_status IS NULL)" : "WHERE (dominio_status = 'pendente' OR dominio_status IS NULL)"}`);
+  const erros = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'erro'" : "WHERE dominio_status = 'erro'"}`);
+  return {
+    total: total ? total.count : 0,
+    enviadas: enviadas ? enviadas.count : 0,
+    pendentes: pendentes ? pendentes.count : 0,
+    erros: erros ? erros.count : 0
+  };
+}
+
+function saveDominioGlobalConfig(data) {
+  let config = queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
+  if (config) {
+    runSql(`
+      UPDATE configuracoes SET
+        dominio_client_id=?, dominio_client_secret=?,
+        dominio_auth_url=?, dominio_api_url=?,
+        updated_at=datetime('now')
+      WHERE id=?
+    `, [
+      data.dominio_client_id || '', data.dominio_client_secret || '',
+      data.dominio_auth_url || '', data.dominio_api_url || '',
+      config.id
+    ]);
+  } else {
+    runSql(`
+      INSERT INTO configuracoes (cnpj, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url)
+      VALUES (?, ?, ?, ?, ?)
+    `, [
+      '00000000000000',
+      data.dominio_client_id || '', data.dominio_client_secret || '',
+      data.dominio_auth_url || '', data.dominio_api_url || ''
+    ]);
+  }
+}
+
 module.exports = {
   initialize, getDb,
   getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU,
@@ -554,6 +656,7 @@ module.exports = {
   insertNota, insertNotas, getNotas, getNotaById, getNotaByChave,
   deleteNota, getEstatisticas, getAllNotasForExport,
   getUfConfigs, saveUfConfig,
+  updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig,
   runSql, saveDb
 };
 

@@ -5,6 +5,7 @@ const fs = require('fs');
 const XLSX = require('xlsx');
 const SefazClient = require('../sefaz/client');
 const TotvsService = require('../integracoes/totvs-service');
+const DominioService = require('../integracoes/dominio-service');
 
 module.exports = function (db, upload) {
 
@@ -89,12 +90,14 @@ module.exports = function (db, upload) {
     try {
       const { 
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
-        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo 
+        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       } = req.body;
       if (!cnpj) return res.status(400).json({ error: 'CNPJ é obrigatório' });
       const empresa = db.createEmpresa({ 
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
-        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo 
+        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       });
       empresa.certificado_senha = empresa.certificado_senha ? '••••••' : '';
       res.json({ success: true, empresa });
@@ -108,11 +111,13 @@ module.exports = function (db, upload) {
     try {
       const { 
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
-        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo
+        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       } = req.body;
       const empresa = db.updateEmpresa(parseInt(req.params.id), {
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
-        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo
+        totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       });
       empresa.certificado_senha = empresa.certificado_senha ? '••••••' : '';
       res.json({ success: true, empresa });
@@ -538,6 +543,113 @@ module.exports = function (db, upload) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ── Integração Domínio (Thomson Reuters) ──────────────
+
+  // Estatísticas Domínio
+  router.get('/dominio/stats', (req, res) => {
+    try {
+      const { empresaId } = req.query;
+      const stats = db.getDominioStats(empresaId ? parseInt(empresaId) : null);
+      res.json(stats);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Testar conexão Domínio
+  router.post('/dominio/testar', async (req, res) => {
+    try {
+      const { empresaId } = req.body;
+      if (!empresaId) return res.status(400).json({ error: 'Selecione uma empresa' });
+      const service = new DominioService(db);
+      const result = await service.testarConexao(parseInt(empresaId));
+      res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Enviar notas para Domínio (background)
+  router.post('/dominio/enviar', async (req, res) => {
+    try {
+      const { empresaId, dataInicio, dataFim, tipo, reenviar } = req.body;
+      if (!empresaId) return res.status(400).json({ error: 'Selecione uma empresa' });
+      
+      const service = new DominioService(db);
+      
+      // Retorna imediato para evitar timeout
+      res.json({ success: true, message: 'Envio para Domínio iniciado em segundo plano.' });
+      
+      service.enviar(parseInt(empresaId), { dataInicio, dataFim, tipo, reenviar })
+        .then(result => {
+          console.log(`[DOMÍNIO] Finalizado para empresa ${empresaId}:`, result);
+        })
+        .catch(err => {
+          console.error(`[DOMÍNIO] Erro no envio para empresa ${empresaId}:`, err.message);
+        });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Enviar nota individual para Domínio
+  router.post('/dominio/enviar-nota/:notaId', async (req, res) => {
+    try {
+      const notaId = parseInt(req.params.notaId);
+      const nota = db.getNotaById(notaId);
+      if (!nota) return res.status(404).json({ error: 'Nota não encontrada' });
+      if (!nota.xml_completo) return res.status(400).json({ error: 'Nota sem XML disponível' });
+
+      const empresa = nota.empresa_id ? db.getEmpresaById(nota.empresa_id) : null;
+      if (!empresa || !empresa.dominio_ativo) {
+        return res.status(400).json({ error: 'Integração Domínio não ativa para esta empresa' });
+      }
+
+      const globalConfig = db.getConfig() || {};
+      const DominioClient = require('../integracoes/dominio');
+      const client = new DominioClient({
+        dominio_client_id: empresa.dominio_client_id || globalConfig.dominio_client_id || '',
+        dominio_client_secret: empresa.dominio_client_secret || globalConfig.dominio_client_secret || '',
+        dominio_integration_key: empresa.dominio_integration_key || '',
+        dominio_auth_url: empresa.dominio_auth_url || globalConfig.dominio_auth_url || '',
+        dominio_api_url: empresa.dominio_api_url || globalConfig.dominio_api_url || ''
+      });
+
+      db.updateDominioStatus(notaId, 'enviando');
+      const result = await client.enviarXml(nota.xml_completo, {
+        chave: nota.chave_acesso,
+        tipo: nota.tipo,
+        numero: nota.numero_nf
+      });
+
+      if (result.success) {
+        db.updateDominioStatus(notaId, 'enviado', null, result.batchId);
+        res.json({ success: true, message: 'Nota enviada ao Domínio com sucesso!' });
+      } else {
+        db.updateDominioStatus(notaId, 'erro', result.error);
+        res.json({ success: false, error: result.error });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Logs Domínio
+  router.get('/dominio/logs', (req, res) => {
+    try {
+      const logPath = path.join(__dirname, '..', '..', 'dominio_sync.log');
+      if (fs.existsSync(logPath)) {
+        res.send(fs.readFileSync(logPath, 'utf8'));
+      } else {
+        res.send('Aguardando início do processo...');
+      }
+    } catch (err) { res.status(500).send(err.message); }
+  });
+
+  // Salvar config global Domínio
+  router.post('/config/dominio', (req, res) => {
+    try {
+      db.saveDominioGlobalConfig(req.body);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Exportação ───────────────────────────────────────

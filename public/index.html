@@ -195,6 +195,9 @@
       <a href="#" class="nav-item" data-page="exportar">
         <span class="material-icons-round">file_download</span>Exportar
       </a>
+      <a href="#" class="nav-item" data-page="dominio">
+        <span class="material-icons-round">cloud_upload</span>Domínio
+      </a>
       <a href="#" class="nav-item" data-page="config">
         <span class="material-icons-round">settings</span>Configurações
       </a>
@@ -306,7 +309,7 @@
           <table>
             <thead>
               <tr>
-                <th>Nº NF</th><th>Data Emissão</th><th>Chave de Acesso</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th><th>Ações</th>
+                <th>Nº NF</th><th>Data Emissão</th><th>Chave de Acesso</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th><th>Domínio</th><th>Ações</th>
               </tr>
             </thead>
             <tbody id="notasTableBody"></tbody>
@@ -438,6 +441,83 @@
       </div>
     </section>
 
+    <!-- Domínio Integration Page -->
+    <section class="page" id="page-dominio">
+      <div class="page-header">
+        <h2>Integração Domínio</h2>
+        <p class="page-subtitle">Envie as notas fiscais para o sistema contábil Domínio (Thomson Reuters)</p>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:24px">
+        <div class="stat-card stat-total">
+          <div class="stat-icon"><span class="material-icons-round">inventory_2</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="domStatTotal">0</span>
+            <span class="stat-label">Total de Notas</span>
+          </div>
+        </div>
+        <div class="stat-card stat-entradas">
+          <div class="stat-icon"><span class="material-icons-round">check_circle</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="domStatEnviadas">0</span>
+            <span class="stat-label">Enviadas</span>
+          </div>
+        </div>
+        <div class="stat-card stat-saidas" style="--stat-accent: #f59e0b">
+          <div class="stat-icon"><span class="material-icons-round">pending</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="domStatPendentes">0</span>
+            <span class="stat-label">Pendentes</span>
+          </div>
+        </div>
+        <div class="stat-card stat-sync" style="--stat-accent: #ef4444">
+          <div class="stat-icon"><span class="material-icons-round">error_outline</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="domStatErros">0</span>
+            <span class="stat-label">Com Erro</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:24px; margin-bottom:20px">
+        <h3 style="margin:0 0 16px; font-size:16px">Enviar Notas para o Domínio</h3>
+        <div class="filter-group" style="margin-bottom:16px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px;margin-bottom:4px">Empresa</label>
+            <select id="dominioEmpresa" class="input-field"></select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px;margin-bottom:4px">Tipo</label>
+            <select id="dominioTipo" class="input-field">
+              <option value="todos">Todos</option>
+              <option value="entrada">Entradas</option>
+              <option value="saida">Saídas</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px;margin-bottom:4px">Data Início</label>
+            <input type="date" id="dominioDataInicio" class="input-field">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px;margin-bottom:4px">Data Fim</label>
+            <input type="date" id="dominioDataFim" class="input-field">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btnDominioEnviar" onclick="app.enviarDominio()">
+            <span class="material-icons-round">cloud_upload</span>Enviar Pendentes
+          </button>
+          <button class="btn btn-secondary" id="btnDominioReenviar" onclick="app.enviarDominio(true)">
+            <span class="material-icons-round">replay</span>Reenviar com Erro
+          </button>
+          <button class="btn btn-secondary" onclick="app.testarConexaoDominio()">
+            <span class="material-icons-round">wifi_tethering</span>Testar Conexão
+          </button>
+        </div>
+        <div id="dominioLogTerminal" class="totvs-log-terminal" style="margin-top:16px"></div>
+      </div>
+    </section>
+
     <!-- Config Page -->
     <section class="page" id="page-config">
       <div class="page-header">
@@ -450,6 +530,9 @@
 
             <button class="btn btn-secondary" onclick="app.abrirModalTotvsConfig()">
               <span class="material-icons-round">settings_input_component</span>Configurar ERP Global
+            </button>
+            <button class="btn btn-secondary" onclick="app.abrirModalDominioConfig()">
+              <span class="material-icons-round">cloud_upload</span>Configurar Domínio Global
             </button>
             <button class="btn btn-primary" onclick="app.abrirModalEmpresa()">
               <span class="material-icons-round">add_business</span>Nova Empresa
@@ -583,6 +666,20 @@
         </div>
       </div>
 
+      <!-- Configuração Domínio -->
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05)">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px">
+          <input type="checkbox" id="modalDominioAtivo" style="width:18px; height:18px">
+          <label for="modalDominioAtivo" style="font-weight:600; cursor:pointer">Ativar Integração Domínio</label>
+        </div>
+        <div id="modalDominioFields" style="display:none">
+          <div class="form-group">
+            <label>Chave de Integração (Gerada na Domínio)</label>
+            <input type="text" id="modalDominioIntegrationKey" class="input-field" placeholder="Insira a chave da empresa">
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn btn-primary" style="flex:1" onclick="app.salvarEmpresa()">
           <span class="material-icons-round">save</span>Salvar
@@ -647,6 +744,49 @@
   </div>
 
 
+
+  </div>
+
+  <!-- Modal Configuração Domínio Global -->
+  <div class="modal-overlay" id="modalDominioConfig">
+    <div class="modal-empresa" style="max-width:600px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <h3 style="margin:0">Configuração Global Domínio</h3>
+          <p style="font-size:13px;color:var(--text-muted);margin:4px 0 0">Credenciais OAuth fornecidas pela Thomson Reuters. A chave de integração deve ser configurada por empresa.</p>
+        </div>
+        <button onclick="app.fecharModalDominioConfig()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Client ID</label>
+          <input type="text" id="globalDominioClientId" class="input-field" placeholder="Client ID da API Domínio">
+        </div>
+        <div class="form-group">
+          <label>Client Secret</label>
+          <input type="password" id="globalDominioClientSecret" class="input-field" placeholder="Client Secret da API Domínio">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Auth URL (OAuth Token)</label>
+        <input type="text" id="globalDominioAuthUrl" class="input-field" placeholder="https://auth.thomsonreuters.com/oauth/token">
+      </div>
+      <div class="form-group">
+        <label>API URL (Base)</label>
+        <input type="text" id="globalDominioApiUrl" class="input-field" placeholder="https://api.onvio.com.br">
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="app.salvarDominioConfigGlobal()">
+          <span class="material-icons-round">save</span>Salvar Configuração Domínio
+        </button>
+        <button class="btn btn-secondary" onclick="app.fecharModalDominioConfig()">Cancelar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast -->
   <div class="toast-container" id="toastContainer"></div>

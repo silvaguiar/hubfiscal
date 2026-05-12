@@ -37,6 +37,7 @@ const app = {
     if (page === 'dashboard') this.loadDashboard();
     if (page === 'notas') this.loadNotas();
     if (page === 'config') this.loadEmpresas();
+    if (page === 'dominio') this.loadDominioPage();
   },
 
   // ── Config ────────────────────────────────────────
@@ -165,10 +166,15 @@ const app = {
   renderNotasTable(notas) {
     const tbody = document.getElementById('notasTableBody');
     if (!notas.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px">Nenhuma nota encontrada</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:40px">Nenhuma nota encontrada</td></tr>';
       return;
     }
-    tbody.innerHTML = notas.map(n => `
+    tbody.innerHTML = notas.map(n => {
+      const ds = n.dominio_status || 'pendente';
+      const domBadgeClass = ds === 'enviado' ? 'dom-enviado' : ds === 'erro' ? 'dom-erro' : ds === 'enviando' ? 'dom-enviando' : 'dom-pendente';
+      const domLabel = ds === 'enviado' ? '✓ Enviado' : ds === 'erro' ? '✕ Erro' : ds === 'enviando' ? '⏳ Enviando' : '● Pendente';
+      const domTooltip = ds === 'erro' && n.dominio_erro ? ` title="${n.dominio_erro}"` : ds === 'enviado' && n.dominio_enviado_em ? ` title="Enviado em ${this.formatDate(n.dominio_enviado_em)}"` : '';
+      return `
       <tr>
         <td><strong>${n.numero_nf || '—'}</strong></td>
         <td>${this.formatDate(n.data_emissao)}</td>
@@ -177,6 +183,7 @@ const app = {
         <td>${this.truncate(n.destinatario_nome, 25)}<br><small style="color:var(--text-muted)">${this.formatCnpj(n.destinatario_cnpj)}</small></td>
         <td><strong>${this.formatCurrency(n.valor_total)}</strong></td>
         <td><span class="badge badge-${n.tipo}">${n.tipo}</span></td>
+        <td><span class="badge ${domBadgeClass}"${domTooltip}>${domLabel}</span></td>
         <td>
           <button class="action-btn" title="Ver XML" onclick="app.viewXml(${n.id})">
             <span class="material-icons-round" style="font-size:16px">code</span>
@@ -184,9 +191,10 @@ const app = {
           <button class="action-btn" title="Download XML" onclick="app.downloadXml(${n.id})">
             <span class="material-icons-round" style="font-size:16px">download</span>
           </button>
+          ${ds !== 'enviado' ? `<button class="action-btn" title="Enviar ao Domínio" onclick="app.enviarNotaDominio(${n.id})"><span class="material-icons-round" style="font-size:16px">cloud_upload</span></button>` : ''}
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   },
 
   renderPagination(data) {
@@ -524,6 +532,7 @@ const app = {
             <span class="meta-chip ${emp.ambiente === 'producao' ? 'prod' : 'homo'}">${emp.ambiente === 'producao' ? 'Produção' : 'Homolog.'}</span>
             <span class="meta-chip ${emp.tipo === 'matriz' ? 'cert-ok' : 'cert-no'}">${emp.tipo === 'matriz' ? 'Matriz' : 'Filial'}</span>
             ${emp.totvs_ativo ? '<span class="meta-chip cert-ok">TOTVS</span>' : ''}
+            ${emp.dominio_ativo ? '<span class="meta-chip" style="background:rgba(168,85,247,.12);color:#c084fc">Domínio</span>' : ''}
           </div>
         </div>
       `).join('');
@@ -534,7 +543,7 @@ const app = {
   },
 
   updateEmpresaFilters(empresas) {
-    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'manualEmpresaHub', 'exportEmpresa'];
+    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'manualEmpresaHub', 'exportEmpresa', 'dominioEmpresa'];
     filters.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -570,6 +579,9 @@ const app = {
       document.getElementById('modalTotvsAtivo').checked = false;
       document.getElementById('modalTotvsFields').style.display = 'none';
       document.getElementById('modalTotvsBranch').value = '';
+      document.getElementById('modalDominioAtivo').checked = false;
+      document.getElementById('modalDominioFields').style.display = 'none';
+      document.getElementById('modalDominioIntegrationKey').value = '';
     } else {
       document.getElementById('modalEmpresaTitulo').textContent = 'Editar Empresa';
       try {
@@ -598,12 +610,20 @@ const app = {
           document.getElementById('modalTotvsAtivo').checked = !!emp.totvs_ativo;
           document.getElementById('modalTotvsFields').style.display = emp.totvs_ativo ? 'block' : 'none';
           document.getElementById('modalTotvsBranch').value = emp.totvs_branch || '';
+          
+          document.getElementById('modalDominioAtivo').checked = !!emp.dominio_ativo;
+          document.getElementById('modalDominioFields').style.display = emp.dominio_ativo ? 'block' : 'none';
+          document.getElementById('modalDominioIntegrationKey').value = emp.dominio_integration_key || '';
         }
       } catch (e) { console.error(e); }
     }
     
     document.getElementById('modalTotvsAtivo').addEventListener('change', (e) => {
       document.getElementById('modalTotvsFields').style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    document.getElementById('modalDominioAtivo').addEventListener('change', (e) => {
+      document.getElementById('modalDominioFields').style.display = e.target.checked ? 'block' : 'none';
     });
 
     document.getElementsByName('modalTipo').forEach(radio => {
@@ -648,6 +668,8 @@ const app = {
     const ambiente = document.getElementById('modalAmbiente').value;
     const totvs_ativo = document.getElementById('modalTotvsAtivo').checked;
     const totvs_branch = document.getElementById('modalTotvsBranch').value;
+    const dominio_ativo = document.getElementById('modalDominioAtivo').checked;
+    const dominio_integration_key = document.getElementById('modalDominioIntegrationKey').value;
     let matriz_id = null;
     
     if (tipo === 'filial') {
@@ -658,7 +680,9 @@ const app = {
     if (!cnpj || cnpj.length !== 14) return this.toast('CNPJ inválido ou não preenchido', 'error');
 
     const data = {
-      cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, totvs_ativo, totvs_branch
+      cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, 
+      totvs_ativo, totvs_branch,
+      dominio_ativo, dominio_integration_key
     };
 
     try {
@@ -767,6 +791,167 @@ const app = {
     }
   },
 
+  // ── Domínio Integration ────────────────────────────
+
+  async loadDominioPage() {
+    try {
+      const empresaId = document.getElementById('dominioEmpresa').value;
+      const res = await fetch(`/api/dominio/stats${empresaId ? '?empresaId=' + empresaId : ''}`);
+      const stats = await res.json();
+      document.getElementById('domStatTotal').textContent = stats.total || 0;
+      document.getElementById('domStatEnviadas').textContent = stats.enviadas || 0;
+      document.getElementById('domStatPendentes').textContent = stats.pendentes || 0;
+      document.getElementById('domStatErros').textContent = stats.erros || 0;
+    } catch (err) { console.error('Erro ao carregar stats Domínio:', err); }
+  },
+
+  async enviarDominio(reenviar = false) {
+    const empresaId = document.getElementById('dominioEmpresa').value;
+    if (!empresaId) return this.toast('Selecione uma empresa', 'error');
+
+    const btnId = reenviar ? 'btnDominioReenviar' : 'btnDominioEnviar';
+    const btn = document.getElementById(btnId);
+    const log = document.getElementById('dominioLogTerminal');
+
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-radius:50%;border-top-color:transparent;animation:spin 1s linear infinite;margin-right:8px;"></span> Enviando...';
+
+    log.style.display = 'block';
+    log.innerHTML = '<div>Iniciando envio para Domínio...</div>';
+
+    try {
+      const payload = {
+        empresaId,
+        dataInicio: document.getElementById('dominioDataInicio').value,
+        dataFim: document.getElementById('dominioDataFim').value,
+        tipo: document.getElementById('dominioTipo').value,
+        reenviar
+      };
+
+      const res = await fetch('/api/dominio/enviar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        log.innerHTML += `<div>${data.message}</div>`;
+        this.toast('Envio iniciado!', 'info');
+
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          try {
+            attempts++;
+            const logRes = await fetch('/api/dominio/logs');
+            const logText = await logRes.text();
+            if (logText) {
+              const lines = logText.split('\n').filter(l => l.trim() !== '');
+              const lastLines = lines.slice(-15);
+              log.innerHTML = lastLines.map(l => `<div>${l}</div>`).join('');
+
+              if (logText.includes('🏁 Envio finalizado') || logText.includes('❌ Falha') || attempts > 300) {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                this.loadDominioPage();
+              }
+            }
+          } catch(e) {}
+        }, 2000);
+      } else {
+        log.innerHTML += `<div style="color:#f87171">Erro: ${data.error}</div>`;
+        this.toast(data.error, 'error');
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    } catch (err) {
+      log.innerHTML += `<div style="color:#f87171">Erro de conexão: ${err.message}</div>`;
+      this.toast('Erro ao comunicar com o servidor', 'error');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  },
+
+  async enviarNotaDominio(notaId) {
+    if (!confirm('Enviar esta nota para o Domínio?')) return;
+    try {
+      const res = await fetch(`/api/dominio/enviar-nota/${notaId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Nota enviada ao Domínio!', 'success');
+        this.loadNotas(this.currentPagina);
+      } else {
+        this.toast(data.error || 'Erro ao enviar', 'error');
+        this.loadNotas(this.currentPagina);
+      }
+    } catch (err) { this.toast('Erro ao enviar nota', 'error'); }
+  },
+
+  async testarConexaoDominio() {
+    const empresaId = document.getElementById('dominioEmpresa').value;
+    if (!empresaId) return this.toast('Selecione uma empresa', 'error');
+    
+    try {
+      const res = await fetch('/api/dominio/testar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresaId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.toast(data.message || 'Conexão OK!', 'success');
+      } else {
+        this.toast(data.message || data.error || 'Falha na conexão', 'error');
+      }
+    } catch (err) { this.toast('Erro ao testar conexão', 'error'); }
+  },
+
+  // ── Domínio Config Global ──────────────────────────
+  async abrirModalDominioConfig() {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const config = await res.json();
+        document.getElementById('globalDominioClientId').value = config.dominio_client_id || '';
+        document.getElementById('globalDominioClientSecret').value = config.dominio_client_secret || '';
+        document.getElementById('globalDominioAuthUrl').value = config.dominio_auth_url || '';
+        document.getElementById('globalDominioApiUrl').value = config.dominio_api_url || '';
+      }
+    } catch(e) {}
+    document.getElementById('modalDominioConfig').classList.add('active');
+  },
+
+  fecharModalDominioConfig() {
+    document.getElementById('modalDominioConfig').classList.remove('active');
+  },
+
+  async salvarDominioConfigGlobal() {
+    try {
+      const payload = {
+        dominio_client_id: document.getElementById('globalDominioClientId').value,
+        dominio_client_secret: document.getElementById('globalDominioClientSecret').value,
+        dominio_auth_url: document.getElementById('globalDominioAuthUrl').value,
+        dominio_api_url: document.getElementById('globalDominioApiUrl').value
+      };
+
+      const res = await fetch('/api/config/dominio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Configuração Domínio salva com sucesso.', 'success');
+        this.fecharModalDominioConfig();
+      } else {
+        this.toast(data.error || 'Erro ao salvar', 'error');
+      }
+    } catch(e) {
+      this.toast('Erro ao salvar configuração Domínio', 'error');
+    }
+  },
 
   // ── Export ────────────────────────────────────────
   exportar(formato) {
