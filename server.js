@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,7 @@ dirs.forEach(dir => {
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Multer config for certificate upload
@@ -36,20 +38,49 @@ const upload = multer({
 
 // Database initialization & server start
 const db = require('./src/database/db');
+const Scheduler = require('./src/scheduler/scheduler');
 
 (async () => {
   await db.initialize();
 
-  // API Routes
+  // Inicializar o scheduler de agendamentos
+  const scheduler = new Scheduler(db);
+  await scheduler.inicializar();
+
+  // ── Auth Routes (públicas) ──────────────────────────────────────
+  const authRoutes = require('./src/routes/auth.routes');
+  app.use('/api/auth', authRoutes(db));
+
+  // ── Middleware de Auth para todas as demais rotas /api ──────────
+  const { requireAuth } = require('./src/auth/middleware');
+  app.use('/api', requireAuth);
+
+  // ── API Routes (protegidas) ─────────────────────────────────────
   const apiRoutes = require('./src/routes/api');
   app.use('/api', apiRoutes(db, upload));
 
-  // SPA fallback
+  // ── Users Routes ────────────────────────────────────────────────
+  const usersRoutes = require('./src/routes/users.routes');
+  app.use('/api/usuarios', usersRoutes(db));
+
+  // ── Agendamentos Routes ─────────────────────────────────────────
+  const agendamentosRoutes = require('./src/routes/agendamentos.routes');
+  app.use('/api/agendamentos', agendamentosRoutes(db, scheduler));
+
+  // ── SPA: login é rota pública, dashboard requer auth ───────────
+  app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  });
+
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 
+  // Graceful shutdown
+  process.on('SIGTERM', () => { scheduler.parar(); process.exit(0); });
+  process.on('SIGINT',  () => { scheduler.parar(); process.exit(0); });
+
   app.listen(PORT, () => {
-    console.log(`\n🟢 Sistema NF-e SEFAZ rodando em http://localhost:${PORT}\n`);
+    console.log(`\n🟢 HubFiscal rodando em http://localhost:${PORT}\n`);
   });
 })();

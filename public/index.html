@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NF-e Manager — Consulta SEFAZ</title>
-  <meta name="description" content="Sistema de consulta de Notas Fiscais Eletrônicas via SEFAZ">
+  <title>HubFiscal — Gestão Fiscal</title>
+  <meta name="description" content="HubFiscal — Sistema de Gestão Fiscal Automatizado">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
@@ -198,6 +198,12 @@
       <a href="#" class="nav-item" data-page="dominio">
         <span class="material-icons-round">cloud_upload</span>Domínio
       </a>
+      <a href="#" class="nav-item" data-page="agendamentos">
+        <span class="material-icons-round">schedule</span>Agendamentos
+      </a>
+      <a href="#" class="nav-item" data-page="usuarios">
+        <span class="material-icons-round">manage_accounts</span>Usuários
+      </a>
       <a href="#" class="nav-item" data-page="config">
         <span class="material-icons-round">settings</span>Configurações
       </a>
@@ -216,8 +222,9 @@
       <button class="menu-toggle" id="menuToggle">
         <span class="material-icons-round">menu</span>
       </button>
-      <div class="top-bar-right">
+      <div class="top-bar-right" style="display:flex;align-items:center;gap:8px">
         <span class="env-badge" id="envBadge">PRODUÇÃO</span>
+        <div id="userInfoBar" style="display:flex;align-items:center;gap:4px"></div>
       </div>
     </header>
 
@@ -518,6 +525,188 @@
       </div>
     </section>
 
+    <!-- Agendamentos Page -->
+    <section class="page" id="page-agendamentos">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">Agendamentos</h2>
+            <p class="page-subtitle" style="margin:4px 0 0">Automação de sincronização TOTVS e envio ao Domínio</p>
+          </div>
+          <button class="btn btn-primary" id="btnNovoAgendamento" onclick="app.abrirModalAgendamento()">
+            <span class="material-icons-round">add_alarm</span>Novo Agendamento
+          </button>
+        </div>
+      </div>
+
+      <!-- Cards de status dos jobs -->
+      <div id="agendamentosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:24px">
+        <div style="text-align:center;padding:60px 20px;color:var(--text-muted);grid-column:1/-1">
+          <span class="material-icons-round" style="font-size:48px;opacity:.3;display:block;margin-bottom:10px">schedule</span>
+          <p>Nenhum agendamento cadastrado</p>
+          <p style="font-size:13px">Clique em "Novo Agendamento" para automatizar o processo.</p>
+        </div>
+      </div>
+
+      <!-- Histórico de execuções -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Histórico de Execuções</h3>
+          <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="app.carregarLogsAgendamentos()">
+            <span class="material-icons-round" style="font-size:16px">refresh</span>Atualizar
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data/Hora</th><th>Empresa</th><th>Tipo</th><th>Status</th><th>Encontradas</th><th>Inseridas</th><th>Enviadas</th><th>Duração</th>
+              </tr>
+            </thead>
+            <tbody id="logsAgendamentosBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal Novo Agendamento -->
+    <div class="modal-overlay" id="modalAgendamento">
+      <div class="modal-empresa" style="max-width:500px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <h3 style="margin:0" id="modalAgendamentoTitulo">Novo Agendamento</h3>
+          <button onclick="app.fecharModalAgendamento()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <input type="hidden" id="modalAgId">
+        <div class="form-group">
+          <label>Empresa</label>
+          <select id="modalAgEmpresa" class="input-field"></select>
+        </div>
+        <div class="form-group">
+          <label>Tipo de Job</label>
+          <select id="modalAgTipo" class="input-field">
+            <option value="totvs_sync">🔄 Sincronização TOTVS (puxar notas)</option>
+            <option value="dominio_envio">📤 Envio ao Domínio (notas pendentes)</option>
+          </select>
+        </div>
+        <div class="form-group" id="modalAgOffsetGroup">
+          <label>Dias de antecedência (D-N)</label>
+          <select id="modalAgOffset" class="input-field">
+            <option value="1">D-1 (ontem)</option>
+            <option value="2" selected>D-2 (anteontem)</option>
+            <option value="3">D-3</option>
+            <option value="5">D-5</option>
+            <option value="7">D-7 (semana passada)</option>
+            <option value="15">D-15</option>
+            <option value="30">D-30</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Horário de Execução</label>
+          <select id="modalAgHorario" class="input-field">
+            <option value="0 6 * * *">Todo dia às 06:00</option>
+            <option value="0 7 * * *">Todo dia às 07:00</option>
+            <option value="0 8 * * *">Todo dia às 08:00</option>
+            <option value="0 12 * * *">Todo dia às 12:00</option>
+            <option value="0 18 * * *">Todo dia às 18:00</option>
+            <option value="0 22 * * *">Todo dia às 22:00</option>
+            <option value="0 0 * * *">Todo dia à meia-noite</option>
+            <option value="0 */4 * * *">A cada 4 horas</option>
+            <option value="0 */6 * * *">A cada 6 horas</option>
+            <option value="0 */12 * * *">A cada 12 horas</option>
+            <option value="custom">⚙️ Personalizado (cron)</option>
+          </select>
+        </div>
+        <div class="form-group" id="modalAgCronCustomGroup" style="display:none">
+          <label>Expressão Cron Personalizada</label>
+          <input type="text" id="modalAgCron" class="input-field" placeholder="Ex: 0 6 * * 1-5 (seg-sex 06h)">
+          <small style="color:var(--text-muted);font-size:11px;margin-top:4px;display:block">Formato: minuto hora dia mês dia_semana</small>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+          <input type="checkbox" id="modalAgAtivo" checked style="width:18px;height:18px;accent-color:#6366f1">
+          <label for="modalAgAtivo" style="cursor:pointer;font-weight:500">Agendamento ativo</label>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" style="flex:1" onclick="app.salvarAgendamento()">
+            <span class="material-icons-round">save</span>Salvar
+          </button>
+          <button class="btn btn-secondary" onclick="app.fecharModalAgendamento()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Usuarios Page -->
+    <section class="page" id="page-usuarios">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">Usuários</h2>
+            <p class="page-subtitle" style="margin:4px 0 0">Gerencie acessos e permissões do sistema</p>
+          </div>
+          <button class="btn btn-primary" onclick="app.abrirModalUsuario()">
+            <span class="material-icons-round">person_add</span>Novo Usuário
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Último Login</th><th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="usuariosTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal Usuário -->
+    <div class="modal-overlay" id="modalUsuario">
+      <div class="modal-empresa" style="max-width:460px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <h3 style="margin:0" id="modalUsuarioTitulo">Novo Usuário</h3>
+          <button onclick="app.fecharModalUsuario()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex">
+            <span class="material-icons-round">close</span>
+          </button>
+        </div>
+        <input type="hidden" id="modalUId">
+        <div class="form-group">
+          <label>Nome Completo</label>
+          <input type="text" id="modalUNome" class="input-field" placeholder="Nome do usuário">
+        </div>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="modalUEmail" class="input-field" placeholder="email@empresa.com.br">
+        </div>
+        <div class="form-group">
+          <label>Senha <small style="color:var(--text-muted);font-weight:400">(deixe em branco para manter)</small></label>
+          <input type="password" id="modalUSenha" class="input-field" placeholder="Nova senha (mínimo 6 caracteres)">
+        </div>
+        <div class="form-group">
+          <label>Perfil de Acesso</label>
+          <select id="modalUPerfil" class="input-field">
+            <option value="viewer">👁️ Viewer — Somente leitura</option>
+            <option value="operador">⚙️ Operador — Sincroniza e exporta</option>
+            <option value="admin">🛡️ Admin — Gerencia empresas e operadores</option>
+            <option value="master">👑 Master — Acesso total</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+          <input type="checkbox" id="modalUAtivo" checked style="width:18px;height:18px;accent-color:#6366f1">
+          <label for="modalUAtivo" style="cursor:pointer;font-weight:500">Usuário ativo</label>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" style="flex:1" onclick="app.salvarUsuario()">
+            <span class="material-icons-round">save</span>Salvar
+          </button>
+          <button class="btn btn-secondary" onclick="app.fecharModalUsuario()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Config Page -->
     <section class="page" id="page-config">
       <div class="page-header">
@@ -791,6 +980,7 @@
   <!-- Toast -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <script src="/js/auth.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

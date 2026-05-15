@@ -3,7 +3,11 @@ const app = {
   currentPagina: 1,
 
   // ── Initialization ────────────────────────────────
-  init() {
+  async init() {
+    // Verifica autenticação antes de qualquer coisa
+    const ok = await Auth.init();
+    if (!ok) return;
+
     this.setupNavigation();
     this.setupCertUpload();
     this.loadConfig();
@@ -34,10 +38,12 @@ const app = {
     document.getElementById(`page-${page}`).classList.add('active');
     document.querySelector(`[data-page="${page}"]`).classList.add('active');
     this.currentPage = page;
-    if (page === 'dashboard') this.loadDashboard();
-    if (page === 'notas') this.loadNotas();
-    if (page === 'config') this.loadEmpresas();
-    if (page === 'dominio') this.loadDominioPage();
+    if (page === 'dashboard')    this.loadDashboard();
+    if (page === 'notas')        this.loadNotas();
+    if (page === 'config')       this.loadEmpresas();
+    if (page === 'dominio')      this.loadDominioPage();
+    if (page === 'agendamentos') this.carregarAgendamentos();
+    if (page === 'usuarios')     this.carregarUsuarios();
   },
 
   // ── Config ────────────────────────────────────────
@@ -1035,7 +1041,276 @@ const app = {
     toast.innerHTML = `<span class="material-icons-round">${icons[type]}</span>${message}`;
     container.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+  },
+
+  // ── Agendamentos ──────────────────────────────────
+
+  async carregarAgendamentos() {
+    try {
+      const res  = await fetch('/api/agendamentos', { credentials: 'include' });
+      const lista = await res.json();
+      const grid = document.getElementById('agendamentosGrid');
+
+      // Popula select de empresa no modal
+      const sel = document.getElementById('modalAgEmpresa');
+      if (sel) {
+        const emp = await (await fetch('/api/empresas', { credentials: 'include' })).json();
+        sel.innerHTML = emp.map(e => `<option value="${e.id}">${e.nome_fantasia || e.razao_social || e.cnpj}</option>`).join('');
+      }
+
+      if (!lista.length) {
+        grid.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);grid-column:1/-1">
+          <span class="material-icons-round" style="font-size:48px;opacity:.3;display:block;margin-bottom:10px">schedule</span>
+          <p>Nenhum agendamento cadastrado</p>
+          <p style="font-size:13px">Clique em "Novo Agendamento" para automatizar o processo.</p></div>`;
+        return;
+      }
+
+      const tipoLabel = { totvs_sync: '🔄 Sync TOTVS', dominio_envio: '📤 Envio Domínio' };
+      const statusColor = { sucesso: '#10b981', erro: '#ef4444', executando: '#f59e0b' };
+
+      grid.innerHTML = lista.map(ag => `
+        <div style="background:var(--card-bg,#1a2035);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:20px;position:relative">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <div style="font-size:15px;font-weight:600;color:var(--text)">${tipoLabel[ag.tipo] || ag.tipo}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ag.empresa_nome || ag.empresa_cnpj || 'Empresa'}</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button onclick="app.executarAgendamentoAgora(${ag.id})" title="Executar Agora"
+                style="background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.2);color:#818cf8;border-radius:8px;padding:6px;cursor:pointer;display:flex;align-items:center;font-size:12px;gap:4px;transition:all .2s"
+                onmouseover="this.style.background='rgba(99,102,241,.25)'" onmouseout="this.style.background='rgba(99,102,241,.12)'">
+                <span class="material-icons-round" style="font-size:16px">play_arrow</span>
+              </button>
+              <button onclick="app.abrirModalAgendamento(${ag.id})" title="Editar"
+                style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:var(--text-muted);border-radius:8px;padding:6px;cursor:pointer;display:flex;align-items:center;transition:all .2s"
+                onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='var(--text-muted)'">
+                <span class="material-icons-round" style="font-size:16px">edit</span>
+              </button>
+              <button onclick="app.excluirAgendamento(${ag.id})" title="Excluir"
+                style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.1);color:#f87171;border-radius:8px;padding:6px;cursor:pointer;display:flex;align-items:center;transition:all .2s"
+                onmouseover="this.style.background='rgba(239,68,68,.15)'" onmouseout="this.style.background='rgba(239,68,68,.05)'">
+                <span class="material-icons-round" style="font-size:16px">delete</span>
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <span style="background:rgba(99,102,241,.1);color:#818cf8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500">⏰ ${ag.cron_expressao}</span>
+            ${ag.tipo === 'totvs_sync' ? `<span style="background:rgba(16,185,129,.1);color:#34d399;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500">D-${ag.dias_offset}</span>` : ''}
+            <span style="border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500;background:${ag.ativo ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)'};color:${ag.ativo ? '#34d399' : '#f87171'}">${ag.ativo ? '● Ativo' : '○ Inativo'}</span>
+          </div>
+          ${ag.ultimo_run ? `<div style="font-size:11px;color:var(--text-muted)">Último run: <strong style="color:${statusColor[ag.ultimo_status] || '#94a3b8'}">${ag.ultimo_status || '?'}</strong> em ${this.formatDate(ag.ultimo_run)}</div>` : '<div style="font-size:11px;color:var(--text-muted)">Nunca executado</div>'}
+        </div>
+      `).join('');
+
+      await this.carregarLogsAgendamentos();
+    } catch (err) { console.error('Erro ao carregar agendamentos:', err); }
+  },
+
+  async carregarLogsAgendamentos() {
+    try {
+      const res  = await fetch('/api/agendamentos/logs?limite=30', { credentials: 'include' });
+      const logs = await res.json();
+      const tbody = document.getElementById('logsAgendamentosBody');
+      if (!tbody) return;
+      if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Nenhuma execução registrada ainda</td></tr>';
+        return;
+      }
+      const statusMap = { sucesso: { icon: '✅', color: '#10b981' }, erro: { icon: '❌', color: '#ef4444' }, executando: { icon: '⏳', color: '#f59e0b' }, parcial: { icon: '⚠️', color: '#f59e0b' } };
+      const tipoMap   = { totvs_sync: '🔄 TOTVS', dominio_envio: '📤 Domínio' };
+      tbody.innerHTML = logs.map(l => {
+        const s = statusMap[l.status] || { icon: '?', color: '#64748b' };
+        const dur = l.duracao_ms ? (l.duracao_ms < 1000 ? l.duracao_ms + 'ms' : (l.duracao_ms / 1000).toFixed(1) + 's') : '—';
+        return `<tr>
+          <td style="font-size:12px">${this.formatDate(l.executado_em)}</td>
+          <td>${this.truncate(l.empresa_nome, 22)}</td>
+          <td>${tipoMap[l.tipo] || l.tipo}</td>
+          <td><span style="color:${s.color};font-weight:600">${s.icon} ${l.status}</span></td>
+          <td style="text-align:center">${l.notas_encontradas || 0}</td>
+          <td style="text-align:center">${l.notas_inseridas || 0}</td>
+          <td style="text-align:center">${l.notas_enviadas || 0}</td>
+          <td style="text-align:center;font-family:monospace;font-size:12px">${dur}</td>
+        </tr>`;
+      }).join('');
+    } catch (err) { console.error('Erro ao carregar logs:', err); }
+  },
+
+  abrirModalAgendamento(id = null) {
+    document.getElementById('modalAgId').value = id || '';
+    document.getElementById('modalAgendamentoTitulo').textContent = id ? 'Editar Agendamento' : 'Novo Agendamento';
+    document.getElementById('modalAgHorario').addEventListener('change', (e) => {
+      document.getElementById('modalAgCronCustomGroup').style.display = e.target.value === 'custom' ? 'block' : 'none';
+    });
+    document.getElementById('modalAgTipo').addEventListener('change', (e) => {
+      document.getElementById('modalAgOffsetGroup').style.display = e.target.value === 'totvs_sync' ? 'block' : 'none';
+    });
+    document.getElementById('modalAgendamento').classList.add('active');
+  },
+
+  fecharModalAgendamento() {
+    document.getElementById('modalAgendamento').classList.remove('active');
+  },
+
+  async salvarAgendamento() {
+    const id           = document.getElementById('modalAgId').value;
+    const empresa_id   = document.getElementById('modalAgEmpresa').value;
+    const tipo         = document.getElementById('modalAgTipo').value;
+    const dias_offset  = document.getElementById('modalAgOffset').value;
+    const horarioSel   = document.getElementById('modalAgHorario').value;
+    const cronCustom   = document.getElementById('modalAgCron').value;
+    const ativo        = document.getElementById('modalAgAtivo').checked;
+    const cron_expressao = horarioSel === 'custom' ? cronCustom : horarioSel;
+
+    if (!empresa_id) return this.toast('Selecione uma empresa', 'error');
+    if (!cron_expressao) return this.toast('Defina o horário de execução', 'error');
+
+    try {
+      const url    = id ? `/api/agendamentos/${id}` : '/api/agendamentos';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method, credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa_id, tipo, dias_offset, cron_expressao, ativo })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Agendamento salvo!', 'success');
+        this.fecharModalAgendamento();
+        this.carregarAgendamentos();
+      } else {
+        this.toast(data.error || 'Erro ao salvar', 'error');
+      }
+    } catch (err) { this.toast('Erro ao salvar agendamento', 'error'); }
+  },
+
+  async excluirAgendamento(id) {
+    if (!confirm('Excluir este agendamento?')) return;
+    try {
+      await fetch(`/api/agendamentos/${id}`, { method: 'DELETE', credentials: 'include' });
+      this.toast('Agendamento removido', 'success');
+      this.carregarAgendamentos();
+    } catch (err) { this.toast('Erro ao excluir', 'error'); }
+  },
+
+  async executarAgendamentoAgora(id) {
+    if (!confirm('Executar este job agora?')) return;
+    try {
+      const res = await fetch(`/api/agendamentos/${id}/executar`, { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      this.toast(data.message || 'Job iniciado!', 'info');
+      setTimeout(() => this.carregarAgendamentos(), 3000);
+    } catch (err) { this.toast('Erro ao executar job', 'error'); }
+  },
+
+  // ── Usuários ────────────────────────────────────────────
+
+  async carregarUsuarios() {
+    try {
+      const res    = await fetch('/api/usuarios', { credentials: 'include' });
+      const lista  = await res.json();
+      const tbody  = document.getElementById('usuariosTableBody');
+      const badges = {
+        master:   { label: '👑 Master',   bg: '#f59e0b22', color: '#f59e0b' },
+        admin:    { label: '🛡️ Admin',    bg: '#6366f122', color: '#818cf8' },
+        operador: { label: '⚙️ Operador', bg: '#10b98122', color: '#34d399' },
+        viewer:   { label: '👁️ Viewer',   bg: '#64748b22', color: '#94a3b8' }
+      };
+      tbody.innerHTML = lista.map(u => {
+        const b = badges[u.perfil] || badges.viewer;
+        return `<tr>
+          <td><strong>${u.nome}</strong></td>
+          <td style="font-size:12px;color:var(--text-muted)">${u.email}</td>
+          <td><span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:${b.bg};color:${b.color}">${b.label}</span></td>
+          <td><span style="font-size:11px;padding:2px 9px;border-radius:20px;background:${u.ativo ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)'};color:${u.ativo ? '#34d399' : '#f87171'}">${u.ativo ? 'Ativo' : 'Inativo'}</span></td>
+          <td style="font-size:12px;color:var(--text-muted)">${u.ultimo_login ? this.formatDate(u.ultimo_login) : '—'}</td>
+          <td>
+            <button onclick="app.abrirModalUsuario(${u.id})" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:var(--text-muted);border-radius:8px;padding:5px 8px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px;transition:all .2s" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='var(--text-muted)'">
+              <span class="material-icons-round" style="font-size:14px">edit</span>
+            </button>
+            ${u.perfil !== 'master' ? `<button onclick="app.excluirUsuario(${u.id})" style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.1);color:#f87171;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-left:4px;transition:all .2s" onmouseover="this.style.background='rgba(239,68,68,.15)'" onmouseout="this.style.background='rgba(239,68,68,.05)'">
+              <span class="material-icons-round" style="font-size:14px">delete</span></button>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) { this.toast('Sem permissão para ver usuários', 'error'); }
+  },
+
+  async abrirModalUsuario(id = null) {
+    document.getElementById('modalUId').value = id || '';
+    document.getElementById('modalUsuarioTitulo').textContent = id ? 'Editar Usuário' : 'Novo Usuário';
+    document.getElementById('modalUNome').value = '';
+    document.getElementById('modalUEmail').value = '';
+    document.getElementById('modalUSenha').value = '';
+    document.getElementById('modalUPerfil').value = 'viewer';
+    document.getElementById('modalUAtivo').checked = true;
+
+    if (id) {
+      try {
+        const lista = await (await fetch('/api/usuarios', { credentials: 'include' })).json();
+        const u = lista.find(x => x.id == id);
+        if (u) {
+          document.getElementById('modalUNome').value  = u.nome;
+          document.getElementById('modalUEmail').value = u.email;
+          document.getElementById('modalUPerfil').value = u.perfil;
+          document.getElementById('modalUAtivo').checked = !!u.ativo;
+        }
+      } catch (_) {}
+    }
+    document.getElementById('modalUsuario').classList.add('active');
+  },
+
+  fecharModalUsuario() {
+    document.getElementById('modalUsuario').classList.remove('active');
+  },
+
+  async salvarUsuario() {
+    const id    = document.getElementById('modalUId').value;
+    const nome  = document.getElementById('modalUNome').value;
+    const email = document.getElementById('modalUEmail').value;
+    const senha = document.getElementById('modalUSenha').value;
+    const perfil = document.getElementById('modalUPerfil').value;
+    const ativo  = document.getElementById('modalUAtivo').checked ? 1 : 0;
+
+    if (!nome || !email) return this.toast('Nome e e-mail são obrigatórios', 'error');
+    if (!id && !senha) return this.toast('Informe a senha para o novo usuário', 'error');
+
+    try {
+      const url    = id ? `/api/usuarios/${id}` : '/api/usuarios';
+      const method = id ? 'PUT' : 'POST';
+      const body   = { nome, email, perfil, ativo };
+      if (senha) body.senha = senha;
+
+      const res = await fetch(url, {
+        method, credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Usuário salvo com sucesso!', 'success');
+        this.fecharModalUsuario();
+        this.carregarUsuarios();
+      } else {
+        this.toast(data.error || 'Erro ao salvar', 'error');
+      }
+    } catch (err) { this.toast('Erro ao salvar usuário', 'error'); }
+  },
+
+  async excluirUsuario(id) {
+    if (!confirm('Excluir este usuário?')) return;
+    try {
+      const res  = await fetch(`/api/usuarios/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Usuário excluído', 'success');
+        this.carregarUsuarios();
+      } else {
+        this.toast(data.error || 'Erro ao excluir', 'error');
+      }
+    } catch (err) { this.toast('Erro ao excluir usuário', 'error'); }
   }
+
 };
 
 document.addEventListener('DOMContentLoaded', () => app.init());

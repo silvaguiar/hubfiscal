@@ -1,0 +1,100 @@
+/**
+ * Scheduler Engine — Motor de agendamento com node-cron
+ * Carrega jobs do banco de dados e os executa conforme expressão cron
+ */
+const cron = require('node-cron');
+const { executarTotvsJob } = require('./jobs/totvs.job');
+const { executarDominioJob } = require('./jobs/dominio.job');
+
+class Scheduler {
+  constructor(db) {
+    this.db = db;
+    this.jobs = new Map(); // agendamento_id → cron task
+  }
+
+  /**
+   * Inicializa o scheduler carregando todos os agendamentos ativos do banco
+   */
+  async inicializar() {
+    console.log('⏰ Iniciando motor de agendamento...');
+    this.recarregar();
+  }
+
+  /**
+   * Para todos os jobs e recarrega do banco
+   */
+  recarregar() {
+    // Para jobs existentes
+    for (const [id, task] of this.jobs) {
+      task.stop();
+    }
+    this.jobs.clear();
+
+    // Recarrega agendamentos ativos
+    const agendamentos = this.db.getAgendamentos().filter(a => a.ativo);
+    
+    for (const ag of agendamentos) {
+      this._registrarJob(ag);
+    }
+
+    console.log(`⏰ Scheduler: ${agendamentos.length} job(s) ativo(s) carregados.`);
+  }
+
+  /**
+   * Registra um único job cron
+   */
+  _registrarJob(agendamento) {
+    const expressao = agendamento.cron_expressao || '0 6 * * *';
+
+    if (!cron.validate(expressao)) {
+      console.warn(`⚠️ [SCHEDULER] Expressão cron inválida para job ${agendamento.id}: "${expressao}"`);
+      return;
+    }
+
+    const task = cron.schedule(expressao, async () => {
+      console.log(`⏰ [SCHEDULER] Disparando job ${agendamento.tipo} (empresa_id: ${agendamento.empresa_id})`);
+      try {
+        // Recarrega o agendamento do banco antes de executar (pode ter sido atualizado)
+        const ag = this.db.getAgendamentoById(agendamento.id);
+        if (!ag || !ag.ativo) return;
+        await this.executarAgora(ag);
+      } catch (err) {
+        console.error(`[SCHEDULER] Erro na execução automática do job ${agendamento.id}:`, err.message);
+      }
+    }, {
+      scheduled: true,
+      timezone: 'America/Sao_Paulo'
+    });
+
+    this.jobs.set(agendamento.id, task);
+    console.log(`✅ [SCHEDULER] Job registrado: ${agendamento.tipo} | Empresa ${agendamento.empresa_id} | Cron: ${expressao}`);
+  }
+
+  /**
+   * Executa um job imediatamente (uso manual ou automático)
+   */
+  async executarAgora(agendamento) {
+    this.db.updateAgendamentoStatus(agendamento.id, 'executando', null);
+    
+    if (agendamento.tipo === 'totvs_sync') {
+      return executarTotvsJob(this.db, agendamento);
+    } else if (agendamento.tipo === 'dominio_envio') {
+      return executarDominioJob(this.db, agendamento);
+    } else {
+      throw new Error(`Tipo de job desconhecido: ${agendamento.tipo}`);
+    }
+  }
+
+  /**
+   * Para todos os jobs (para shutdown do servidor)
+   */
+  parar() {
+    for (const [id, task] of this.jobs) {
+      task.stop();
+    }
+    this.jobs.clear();
+    console.log('⏰ Scheduler parado.');
+  }
+}
+
+module.exports = Scheduler;

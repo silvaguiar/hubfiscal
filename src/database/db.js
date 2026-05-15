@@ -140,6 +140,58 @@ async function initialize() {
     conn.run(`INSERT OR IGNORE INTO robos_sefaz_uf (uf, portal_url) VALUES ('SP', 'https://www.fazenda.sp.gov.br/')`);
   } catch (e) {}
 
+  // ── Tabela de Usuários ────────────────────────────────────────────────
+  conn.run(`
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL DEFAULT 'viewer',
+      ativo INTEGER DEFAULT 1,
+      ultimo_login DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // ── Tabela de Agendamentos ────────────────────────────────────────────
+  conn.run(`
+    CREATE TABLE IF NOT EXISTS agendamentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      empresa_id INTEGER REFERENCES empresas(id),
+      tipo TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      dias_offset INTEGER DEFAULT 2,
+      cron_expressao TEXT DEFAULT '0 6 * * *',
+      ultimo_run DATETIME,
+      ultimo_status TEXT,
+      ultimo_resultado TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // ── Tabela de Logs de Execução ────────────────────────────────────────
+  conn.run(`
+    CREATE TABLE IF NOT EXISTS logs_execucao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agendamento_id INTEGER REFERENCES agendamentos(id),
+      empresa_id INTEGER REFERENCES empresas(id),
+      tipo TEXT NOT NULL,
+      status TEXT NOT NULL,
+      notas_encontradas INTEGER DEFAULT 0,
+      notas_inseridas INTEGER DEFAULT 0,
+      notas_enviadas INTEGER DEFAULT 0,
+      detalhes TEXT,
+      duracao_ms INTEGER,
+      executado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  try { conn.run('CREATE INDEX IF NOT EXISTS idx_logs_agendamento ON logs_execucao(agendamento_id)'); } catch(_) {}
+  try { conn.run('CREATE INDEX IF NOT EXISTS idx_logs_empresa ON logs_execucao(empresa_id)'); } catch(_) {}
+
   // Migrações de colunas
   const migracoes = [
     { sql: 'ALTER TABLE notas_fiscais ADD COLUMN empresa_id INTEGER', msg: 'empresa_id em notas_fiscais' },
@@ -208,6 +260,9 @@ async function initialize() {
   try {
     conn.run("UPDATE notas_fiscais SET schema_type = substr(chave_acesso, 21, 2) WHERE schema_type IS NULL OR schema_type = '' OR length(schema_type) > 3");
   } catch (e) { console.error('⚠️ Erro na manutenção de modelos:', e.message); }
+
+  // ── Seed: Criar usuário master padrão se não existir ──────────────────
+  await criarMasterSeNaoExistir();
 
   saveDb();
   console.log('✅ Banco de dados inicializado');
@@ -647,6 +702,194 @@ function saveDominioGlobalConfig(data) {
   }
 }
 
+// ── Usuários ─────────────────────────────────────────────────────────────
+
+async function criarMasterSeNaoExistir() {
+  try {
+    const existe = queryOne("SELECT id FROM usuarios WHERE perfil = 'master' LIMIT 1");
+    if (existe) return;
+
+    const bcrypt = require('bcryptjs');
+    const senhaGerada = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-4).toUpperCase();
+    const hash = await bcrypt.hash(senhaGerada, 10);
+
+    db.run(
+      `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, 'master', 1)`,
+      ['Administrador Master', 'admin@hubfiscal.local', hash]
+    );
+    saveDb();
+
+    console.log('\n' + '='.repeat(55));
+    console.log('🔐 USUÁRIO MASTER CRIADO — ANOTE ESTAS CREDENCIAIS:');
+    console.log('   Email : admin@hubfiscal.local');
+    console.log(`   Senha : ${senhaGerada}`);
+    console.log('   ⚠️  Esta senha é exibida apenas uma vez!');
+    console.log('='.repeat(55) + '\n');
+  } catch (e) {
+    console.error('⚠️ Erro ao criar usuário master:', e.message);
+  }
+}
+
+function getUsuarios() {
+  return queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at FROM usuarios ORDER BY perfil ASC, nome ASC');
+}
+
+function getUsuarioById(id) {
+  return queryOne('SELECT * FROM usuarios WHERE id = ?', [id]);
+}
+
+function getUsuarioByEmail(email) {
+  return queryOne('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email.toLowerCase()]);
+}
+
+function createUsuario(data) {
+  db.run(
+    `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, ?, 1)`,
+    [data.nome, data.email, data.senha_hash, data.perfil || 'viewer']
+  );
+  saveDb();
+  return queryOne('SELECT * FROM usuarios WHERE email = ?', [data.email]);
+}
+
+function updateUsuario(id, data) {
+  const u = getUsuarioById(id);
+  if (!u) throw new Error('Usuário não encontrado');
+  db.run(`
+    UPDATE usuarios SET
+      nome = COALESCE(?, nome),
+      email = COALESCE(?, email),
+      senha_hash = COALESCE(?, senha_hash),
+      perfil = COALESCE(?, perfil),
+      ativo = COALESCE(?, ativo),
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [
+    data.nome || null,
+    data.email || null,
+    data.senha_hash || null,
+    data.perfil || null,
+    data.ativo !== undefined ? data.ativo : null,
+    id
+  ]);
+  saveDb();
+  return getUsuarioById(id);
+}
+
+function deleteUsuario(id) {
+  runSql('DELETE FROM usuarios WHERE id = ?', [id]);
+}
+
+function registrarLogin(usuarioId) {
+  db.run("UPDATE usuarios SET ultimo_login = datetime('now') WHERE id = ?", [usuarioId]);
+  saveDb();
+}
+
+// ── Agendamentos ──────────────────────────────────────────────────────────
+
+function getAgendamentos() {
+  return queryAll(`
+    SELECT a.*, e.razao_social as empresa_nome, e.cnpj as empresa_cnpj
+    FROM agendamentos a
+    LEFT JOIN empresas e ON e.id = a.empresa_id
+    ORDER BY a.id ASC
+  `);
+}
+
+function getAgendamentoById(id) {
+  return queryOne('SELECT * FROM agendamentos WHERE id = ?', [id]);
+}
+
+function createAgendamento(data) {
+  db.run(
+    `INSERT INTO agendamentos (empresa_id, tipo, ativo, dias_offset, cron_expressao)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      parseInt(data.empresa_id),
+      data.tipo,
+      data.ativo !== undefined ? (data.ativo ? 1 : 0) : 1,
+      parseInt(data.dias_offset) || 2,
+      data.cron_expressao || '0 6 * * *'
+    ]
+  );
+  saveDb();
+  const rows = queryAll('SELECT * FROM agendamentos ORDER BY id DESC LIMIT 1');
+  return rows[0];
+}
+
+function updateAgendamento(id, data) {
+  const ag = getAgendamentoById(id);
+  if (!ag) throw new Error('Agendamento não encontrado');
+  db.run(`
+    UPDATE agendamentos SET
+      ativo = COALESCE(?, ativo),
+      dias_offset = COALESCE(?, dias_offset),
+      cron_expressao = COALESCE(?, cron_expressao),
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [
+    data.ativo !== undefined ? (data.ativo ? 1 : 0) : null,
+    data.dias_offset !== undefined ? parseInt(data.dias_offset) : null,
+    data.cron_expressao || null,
+    id
+  ]);
+  saveDb();
+  return getAgendamentoById(id);
+}
+
+function updateAgendamentoStatus(id, status, resultado) {
+  db.run(`
+    UPDATE agendamentos SET
+      ultimo_run = datetime('now'),
+      ultimo_status = ?,
+      ultimo_resultado = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `, [status, resultado || null, id]);
+  saveDb();
+}
+
+function deleteAgendamento(id) {
+  runSql('DELETE FROM agendamentos WHERE id = ?', [id]);
+}
+
+// ── Logs de Execução ──────────────────────────────────────────────────────
+
+function registrarLogExecucao(data) {
+  db.run(`
+    INSERT INTO logs_execucao
+      (agendamento_id, empresa_id, tipo, status, notas_encontradas, notas_inseridas, notas_enviadas, detalhes, duracao_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    data.agendamento_id || null,
+    data.empresa_id || null,
+    data.tipo,
+    data.status,
+    data.notas_encontradas || 0,
+    data.notas_inseridas || 0,
+    data.notas_enviadas || 0,
+    data.detalhes || null,
+    data.duracao_ms || 0
+  ]);
+  saveDb();
+}
+
+function getLogsExecucao({ agendamento_id, empresa_id, limite } = {}) {
+  let where = [];
+  let params = [];
+  if (agendamento_id) { where.push('l.agendamento_id = ?'); params.push(agendamento_id); }
+  if (empresa_id) { where.push('l.empresa_id = ?'); params.push(empresa_id); }
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  params.push(parseInt(limite) || 50);
+  return queryAll(`
+    SELECT l.*, e.razao_social as empresa_nome
+    FROM logs_execucao l
+    LEFT JOIN empresas e ON e.id = l.empresa_id
+    ${whereClause}
+    ORDER BY l.executado_em DESC
+    LIMIT ?
+  `, params);
+}
+
 module.exports = {
   initialize, getDb,
   getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU,
@@ -657,6 +900,12 @@ module.exports = {
   deleteNota, getEstatisticas, getAllNotasForExport,
   getUfConfigs, saveUfConfig,
   updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig,
+  // Auth / Usuários
+  getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin,
+  // Agendamentos
+  getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento,
+  // Logs
+  registrarLogExecucao, getLogsExecucao,
   runSql, saveDb
 };
 
