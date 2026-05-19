@@ -126,7 +126,7 @@ class TotvsClient {
           },
           branchCodeList: this.branch ? [parseInt(this.branch)] : [],
           invoiceStatusList: ["E"],
-          eletronicInvoiceStatusList: ["A"],
+          eletronicInvoiceStatusList: ["A", "C"],
           origin: 1
         },
         page: currentPage,
