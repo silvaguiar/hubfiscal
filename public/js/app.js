@@ -995,6 +995,33 @@ const app = {
     } catch { return dateStr; }
   },
 
+  formatCron(expr) {
+    if (!expr) return '—';
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) return expr;
+    const [min, hour, dom, month, dow] = parts;
+    const pad = v => v.padStart(2, '0');
+    // Diário em horário fixo: "0 10 * * *" → "Diário às 10:00"
+    if (dom === '*' && month === '*' && dow === '*' && !min.includes('/') && !hour.includes('/')) {
+      return `Diário às ${pad(hour)}:${pad(min)}`;
+    }
+    // Dias da semana específicos: "0 10 * * 1-5" → "Seg-Sex às 10:00"
+    const dowMap = { '0':'Dom','1':'Seg','2':'Ter','3':'Qua','4':'Qui','5':'Sex','6':'Sáb' };
+    if (dom === '*' && month === '*' && dow !== '*' && !min.includes('/') && !hour.includes('/')) {
+      const dias = dow.split(',').map(d => dowMap[d] || d).join(', ');
+      return `${dias} às ${pad(hour)}:${pad(min)}`;
+    }
+    // A cada N minutos: "*/15 * * * *" → "A cada 15 min"
+    if (min.startsWith('*/') && hour === '*') {
+      return `A cada ${min.slice(2)} min`;
+    }
+    // A cada N horas: "0 */2 * * *" → "A cada 2h"
+    if (hour.startsWith('*/') && dom === '*' && month === '*' && dow === '*') {
+      return `A cada ${hour.slice(2)}h`;
+    }
+    return expr;
+  },
+
   formatCnpj(cnpj) {
     if (!cnpj) return '—';
     cnpj = cnpj.replace(/\D/g, '');
@@ -1113,7 +1140,7 @@ const app = {
             </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-            <span style="background:rgba(99,102,241,.1);color:#818cf8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500">⏰ ${ag.cron_expressao}</span>
+            <span style="background:rgba(99,102,241,.1);color:#818cf8;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500" title="${ag.cron_expressao}">⏰ ${this.formatCron(ag.cron_expressao)}</span>
             ${ag.tipo === 'totvs_sync' ? `<span style="background:rgba(16,185,129,.1);color:#34d399;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500">D-${ag.dias_offset}</span>` : ''}
             <span style="border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500;background:${ag.ativo ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)'};color:${ag.ativo ? '#34d399' : '#f87171'}">${ag.ativo ? '● Ativo' : '○ Inativo'}</span>
           </div>
