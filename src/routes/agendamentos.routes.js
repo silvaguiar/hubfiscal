@@ -67,13 +67,16 @@ module.exports = function (db, scheduler) {
   router.get('/logs', requireAuth, async (req, res) => {
     try {
       const { agendamento_id, empresa_id, limite, tipo, status } = req.query;
-      const logs = await db.getLogsExecucao({
+      let logs = await db.getLogsExecucao({
         agendamento_id: agendamento_id ? parseInt(agendamento_id) : null,
         empresa_id: empresa_id ? parseInt(empresa_id) : null,
         tipo,
         status,
         limite: parseInt(limite) || 50
       });
+      if (!status && Array.isArray(logs)) {
+        logs = logs.filter(l => l.status !== 'in_progress');
+      }
       res.json(logs);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
