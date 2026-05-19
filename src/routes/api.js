@@ -495,15 +495,10 @@ module.exports = function (db, upload) {
   // ── Integração TOTVS ──────────────────────────────────
   router.get('/totvs/logs', async (req, res) => {
     try {
-      const jobId = req.query.jobId;
-      if (jobId) {
-        const job = await db.getTotvsJobById(parseInt(jobId));
-        if (!job) return res.status(404).send('Job não encontrado');
-        return res.send(job.detalhes || `Status: ${job.status}`);
-      }
-      const jobs = await db.listTotvsJobs({ status: 'processing', limite: 1 });
-      if (jobs && jobs.length > 0) {
-        return res.send(jobs[0].detalhes || `Status: ${jobs[0].status}`);
+      // Busca o log mais recente de extração TOTVS no banco (criado por service.extrair())
+      const logs = await db.getLogsExecucao({ tipo: 'totvs', limite: 1 });
+      if (logs && logs.length > 0) {
+        return res.send(logs[0].detalhes || `Status: ${logs[0].status}`);
       }
       res.send('Aguardando início do processo...');
     } catch (err) { res.status(500).send(err.message); }
@@ -514,49 +509,19 @@ module.exports = function (db, upload) {
       const { empresaId, mesReferencia } = req.body;
       if (!mesReferencia) return res.status(400).json({ error: 'Mês de referência é obrigatório.' });
 
-      const job = await db.createTotvsJob({
-        empresa_id: empresaId ? parseInt(empresaId) : null,
-        mes_referencia: mesReferencia,
-        status: 'pending',
-        page_size: 5,
-        detalhes: 'Job TOTVS criado e aguardando processamento.'
-      });
-
-      res.json({ success: true, jobId: job.id, message: 'Job TOTVS criado com sucesso.' });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.post('/totvs/process-job', express.json(), async (req, res) => {
-    try {
-      const { jobId, chunkSize } = req.body;
-      let job;
-      if (jobId) {
-        job = await db.getTotvsJobById(parseInt(jobId));
-        if (!job) return res.status(404).json({ error: 'Job não encontrado.' });
-      } else {
-        job = await db.getNextTotvsJob();
-      }
-      if (!job) return res.json({ success: true, done: true, message: 'Nenhum job pendente.' });
-      if (job.status === 'completed') return res.json({ success: true, done: true, message: 'Job já concluído.', job });
-
-      await db.updateTotvsJob(job.id, { status: 'processing', detalhes: 'Job em processamento...' });
+      res.json({ success: true, message: 'Extração TOTVS iniciada em segundo plano.' });
 
       const service = new TotvsService(db);
-      const result = await service.processJob(job, parseInt(chunkSize) || 3);
-      return res.json({ success: true, ...result });
+      service.extrair(empresaId ? parseInt(empresaId) : null, mesReferencia)
+        .then(result => {
+          console.log('[TOTVS] Extração finalizada:', result);
+        })
+        .catch(err => {
+          console.error('[TOTVS] Erro na extração:', err.message);
+        });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  });
-
-  router.get('/totvs/jobs/:id', async (req, res) => {
-    try {
-      const job = await db.getTotvsJobById(parseInt(req.params.id));
-      if (!job) return res.status(404).json({ error: 'Job não encontrado.' });
-      res.json(job);
-    } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Integração Domínio (Thomson Reuters) ──────────────
