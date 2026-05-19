@@ -10,6 +10,7 @@ class TotvsService {
     this.logPath = path.join(os.tmpdir(), 'totvs_sync.log');
     this.logBuffer = '';
     this.logId = null;
+    this.lastDbFlush = 0;
   }
 
   async createLogEntry(logData) {
@@ -29,10 +30,11 @@ class TotvsService {
     } catch (err) {
       console.warn('Não foi possível gravar log TOTVS em disco:', err.message);
     }
-    if (this.logId) {
+    if (this.logId && Date.now() - this.lastDbFlush >= 3000) {
       this.db.updateLogExecucao(this.logId, { detalhes: this.logBuffer }).catch(err => {
         console.warn('Falha ao atualizar log TOTVS no banco:', err.message);
       });
+      this.lastDbFlush = Date.now();
     }
     console.log(line.trim());
   }
