@@ -132,24 +132,31 @@ class TotvsClient {
 
   async buscarInvoicesPage(filtros, page = 1, pageSize = 20) {
     const url = `${this.baseUrl}/api/totvsmoda/fiscal/v2/invoices/search`;
-    const payload = {
-      filter: {
-        change: {
-          startDate: filtros.startDate,
-          endDate: filtros.endDate
-        },
-        branchCodeList: this.branch ? [parseInt(this.branch)] : [],
-        invoiceStatusList: ["E"],
-        eletronicInvoiceStatusList: ["A", "C"],
-        origin: 1
+
+    const filter = {
+      change: {
+        startDate: filtros.startDate,
+        endDate: filtros.endDate
       },
-      page: page,
-      pageSize: pageSize
+      invoiceStatusList: ["E"],
+      eletronicInvoiceStatusList: ["A", "C"],
+      origin: 1
     };
 
-    if (Array.isArray(filtros.personCpfCnpjList) && filtros.personCpfCnpjList.length > 0) {
-      payload.filter.personCpfCnpjList = filtros.personCpfCnpjList;
+    // Só envia branchCodeList se estiver configurado — array vazio retorna 0 resultados no TOTVS
+    if (this.branch) {
+      filter.branchCodeList = [parseInt(this.branch)];
     }
+
+    // CNPJs limpos (só dígitos) para o filtro de pessoa
+    if (Array.isArray(filtros.personCpfCnpjList) && filtros.personCpfCnpjList.length > 0) {
+      const cnpjsLimpos = filtros.personCpfCnpjList.map(c => c.replace(/\D/g, '')).filter(Boolean);
+      if (cnpjsLimpos.length > 0) filter.personCpfCnpjList = cnpjsLimpos;
+    }
+
+    const payload = { filter, page, pageSize };
+
+    console.log(`📤 TOTVS payload (pág ${page}):`, JSON.stringify(payload));
 
     try {
       const headers = await this._getHeaders();
