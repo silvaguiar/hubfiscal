@@ -123,7 +123,7 @@ class TotvsService {
         agendamento_id: null,
         empresa_id: empresaId ? parseInt(empresaId) : null,
         tipo: 'totvs',
-        status: 'in_progress',
+        status: 'executando',
         notas_encontradas: 0,
         notas_inseridas: 0,
         notas_enviadas: 0,
@@ -131,7 +131,7 @@ class TotvsService {
       });
     } else {
       await this.db.updateLogExecucao(this.logId, {
-        status: 'in_progress',
+        status: 'executando',
         detalhes: `Iniciando TOTVS para ${labelLog} (${dataReferencia})`
       }).catch(err => {
         console.warn('Falha ao atualizar log TOTVS no banco:', err.message);
@@ -262,6 +262,217 @@ class TotvsService {
         duracao_ms: Date.now() - startTime
       }).catch(err => {
         console.warn('Falha ao marcar log TOTVS como falho no banco:', err.message);
+      });
+      throw err;
+    }
+  }
+
+  async processJob(job, chunkSize = 3) {
+    if (!job) throw new Error('Job TOTVS inválido');
+    this.logPath = path.join(os.tmpdir(), `totvs_job_${job.id}.log`);
+    this.logBuffer = job.detalhes || '';
+    this.logId = null;
+    this.lastDbFlush = 0;
+
+    const empresaId = job.empresa_id;
+    const dataReferencia = job.mes_referencia;
+    let currentPage = job.current_page || 1;
+    let currentIndex = job.current_item_index || 0;
+    const pageSize = job.page_size || 10;
+    let empresas = [];
+    let isGlobal = false;
+    let config = {};
+
+    if (empresaId === null || empresaId === 0 || empresaId === '0') {
+      isGlobal = true;
+      const todas = await this.db.getEmpresas();
+      empresas = todas.filter(e => e.totvs_ativo === true || e.totvs_ativo === 'true' || e.totvs_ativo == 1);
+      if (empresas.length === 0) throw new Error('Nenhuma empresa ativa para sincronização TOTVS.');
+      const globalConfig = await this.db.getConfig() || {};
+      config = { ...globalConfig };
+      if (!config.totvs_base_url || config.totvs_base_url.trim() === '') {
+        config = { ...empresas[0] };
+      }
+    } else {
+      const empresa = await this.db.getEmpresaById(empresaId);
+      if (!empresa) throw new Error('Empresa não encontrada');
+      empresas = [empresa];
+      const globalConfig = await this.db.getConfig() || {};
+      config = { ...empresa };
+      if (!config.totvs_base_url || config.totvs_base_url.trim() === '') {
+        config.totvs_base_url = globalConfig.totvs_base_url;
+        config.totvs_user = globalConfig.totvs_user;
+        config.totvs_password = globalConfig.totvs_password;
+        config.totvs_client_id = globalConfig.totvs_client_id;
+        config.totvs_client_secret = globalConfig.totvs_client_secret;
+        config.totvs_grant_type = globalConfig.totvs_grant_type;
+        config.totvs_branch = empresa.totvs_branch;
+      }
+    }
+
+    config.onTokenUpdated = async (token, expiry) => {
+      if (!isGlobal && empresaId) {
+        await this.db.updateEmpresaTokens(empresaId, {
+          totvs_token: token,
+          totvs_token_expiry: expiry
+        });
+        const empresa = await this.db.getEmpresaById(empresaId);
+        const globalConfig = await this.db.getConfig() || {};
+        if (globalConfig.id && (!empresa.totvs_client_id || empresa.totvs_client_id.trim() === '')) {
+          await this.db.updateGlobalTokens({
+            totvs_token: token,
+            totvs_token_expiry: expiry
+          });
+        }
+      } else if (isGlobal) {
+        const globalConfig = await this.db.getConfig() || {};
+        if (globalConfig.id) {
+          await this.db.updateGlobalTokens({
+            totvs_token: token,
+            totvs_token_expiry: expiry
+          });
+        }
+      }
+    };
+
+    const client = new TotvsClient(config);
+    let startDate, endDate;
+    if (dataReferencia.length === 10) {
+      startDate = `${dataReferencia}T00:00:00.000Z`;
+      endDate = `${dataReferencia}T23:59:59.999Z`;
+    } else {
+      const [ano, mes] = dataReferencia.split('-');
+      const ultimoDia = new Date(ano, mes, 0).getDate();
+      startDate = `${dataReferencia}-01T00:00:00.000Z`;
+      endDate = `${dataReferencia}-${ultimoDia}T23:59:59.999Z`;
+    }
+
+    const labelLog = isGlobal ? 'TODAS AS EMPRESAS ATIVAS' : empresas[0].razao_social;
+    this.writeLog(`🚀 Processando job TOTVS ${job.id} para ${labelLog} (${dataReferencia}) - página ${currentPage}, item ${currentIndex + 1}`);
+
+    try {
+      await client.obterToken();
+      const cnpjs = empresas.map(e => e.cnpj);
+      const result = await client.buscarInvoicesPage({ personCpfCnpjList: cnpjs, startDate, endDate }, currentPage, pageSize);
+      const invoices = result.data || [];
+      const hasNext = result.hasNext;
+
+      if (!invoices.length && !hasNext) {
+        await this.db.updateTotvsJob(job.id, { status: 'completed', detalhes: this.logBuffer });
+        return { success: true, done: true, message: 'Nenhuma nota encontrada.' };
+      }
+
+      const empMap = {};
+      empresas.forEach(e => { empMap[e.cnpj.replace(/\D/g, '')] = e; });
+
+      let processCount = 0;
+      let saved = 0, skipped = 0, errors = 0, ignored = 0;
+
+      for (let i = currentIndex; i < invoices.length && processCount < chunkSize; i++, processCount++) {
+        const inv = invoices[i];
+        let chaveRaw = inv.accessKey ||
+                       inv.eletronicInvoiceAccessKey ||
+                       (inv.eletronic ? inv.eletronic.accessKey : null) ||
+                       (inv.eletronic ? inv.eletronic.eletronicInvoiceAccessKey : null) ||
+                       inv.invoiceAccessKey ||
+                       inv.chNFe ||
+                       inv.chaveAcesso;
+        const chave = (chaveRaw || '').toString().trim();
+
+        if (!chave || chave.length < 40) {
+          ignored++;
+          this.writeLog(`⚠️ [${i + 1}/${invoices.length}] Nota sem chave válida. Pulando.`);
+          continue;
+        }
+
+        try {
+          const existente = await this.db.getNotaByChave(chave);
+          if (existente) {
+            skipped++;
+            this.writeLog(`⏩ Nota ${chave.substring(0, 10)}... já existe. Pulando.`);
+            continue;
+          }
+
+          this.writeLog(`📥 [${i + 1}/${invoices.length}] Baixando XML da TOTVS: ${chave}`);
+          const xmlContent = await client.exportarXml(chave);
+          if (!xmlContent) {
+            errors++;
+            this.writeLog(`❌ XML não disponível para chave ${chave}`);
+            continue;
+          }
+
+          let parsed = xmlParser.parseNFeXml(xmlContent, empresas[0].cnpj);
+          if (!parsed) parsed = xmlParser.parseResNFe(xmlContent, empresas[0].cnpj);
+
+          if (!parsed) {
+            errors++;
+            this.writeLog(`❌ Falha ao interpretar XML: ${chave}`);
+            continue;
+          }
+
+          parsed.xml_completo = xmlContent;
+          parsed.tipo = 'saida';
+          if (parsed.data_emissao && parsed.data_emissao.includes('T')) {
+            parsed.data_emissao = parsed.data_emissao.split('T')[0];
+          }
+
+          const cnpjEmit = (parsed.emitente_cnpj || '').replace(/\D/g, '');
+          const cnpjDest = (parsed.destinatario_cnpj || '').replace(/\D/g, '');
+          const empAlvo = empMap[cnpjEmit] || empMap[cnpjDest] || empresas[0];
+
+          await this.db.insertNota(parsed, empAlvo.id);
+          saved++;
+          this.writeLog(`💾 Salvo nota ${parsed.numero_nf || chave.substring(0, 10)} para ${empAlvo.razao_social}`);
+        } catch (err) {
+          errors++;
+          this.writeLog(`❌ Erro processando a nota ${chave}: ${err.message}`);
+        }
+      }
+
+      const nextIndex = currentIndex + processCount;
+      let nextPage = currentPage;
+      let done = false;
+      if (nextIndex >= invoices.length) {
+        if (hasNext) {
+          nextPage = currentPage + 1;
+          this.writeLog(`➡️ Página ${currentPage} concluída. Avançando para página ${nextPage}.`);
+          currentIndex = 0;
+        } else {
+          done = true;
+          this.writeLog(`🏁 Job TOTVS ${job.id} concluído.`);
+        }
+      } else {
+        currentIndex = nextIndex;
+        this.writeLog(`⏳ Pausando após ${processCount} notas. Próximo item na página ${currentPage}: índice ${currentIndex + 1}.`);
+      }
+
+      await this.db.updateTotvsJob(job.id, {
+        status: done ? 'completed' : 'processing',
+        current_page: nextPage,
+        current_item_index: done ? 0 : currentIndex,
+        total_processed: (job.total_processed || 0) + processCount,
+        total_saved: (job.total_saved || 0) + saved,
+        total_skipped: (job.total_skipped || 0) + skipped,
+        total_errors: (job.total_errors || 0) + errors,
+        detalhes: this.logBuffer
+      });
+
+      return {
+        success: true,
+        done,
+        job: await this.db.getTotvsJobById(job.id),
+        message: done ? 'Job concluído.' : 'Processamento parcial concluído. Agende a próxima execução.',
+        processed: processCount,
+        saved,
+        skipped,
+        errors,
+        ignored
+      };
+    } catch (err) {
+      this.writeLog(`❌ Erro: ${err.message}`);
+      await this.db.updateTotvsJob(job.id, {
+        status: 'failed',
+        detalhes: this.logBuffer
       });
       throw err;
     }

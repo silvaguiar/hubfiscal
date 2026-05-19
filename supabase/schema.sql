@@ -116,6 +116,7 @@ CREATE TABLE agendamentos (
   id SERIAL PRIMARY KEY,
   empresa_id INTEGER REFERENCES empresas(id),
   tipo TEXT NOT NULL,
+  nome TEXT,
   ativo INTEGER DEFAULT 1,
   dias_offset INTEGER DEFAULT 2,
   cron_expressao TEXT DEFAULT '0 6 * * *',

@@ -18,9 +18,9 @@ module.exports = function (db, scheduler) {
   // POST /api/agendamentos — criar agendamento
   router.post('/', requireAuth, requirePerfil('operador', 'admin', 'master'), async (req, res) => {
     try {
-      const { empresa_id, tipo, cron_expressao, dias_offset, ativo } = req.body;
+      const { empresa_id, tipo, nome, cron_expressao, dias_offset, ativo } = req.body;
       if (!empresa_id || !tipo) return res.status(400).json({ error: 'empresa_id e tipo são obrigatórios.' });
-      const ag = await db.createAgendamento({ empresa_id, tipo, cron_expressao, dias_offset, ativo });
+      const ag = await db.createAgendamento({ empresa_id, tipo, nome, cron_expressao, dias_offset, ativo });
       scheduler.recarregar();
       res.json({ success: true, agendamento: ag });
     } catch (err) { res.status(500).json({ error: err.message }); }

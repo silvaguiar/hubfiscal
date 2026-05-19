@@ -1083,13 +1083,15 @@ const app = {
       }
 
       const tipoLabel = { totvs_sync: '🔄 Sync TOTVS', dominio_envio: '📤 Envio Domínio' };
-      const statusColor = { sucesso: '#10b981', erro: '#ef4444', executando: '#f59e0b' };
+      const statusColor = { sucesso: '#10b981', erro: '#ef4444', executando: '#f59e0b', in_progress: '#f59e0b', processing: '#f59e0b', pending: '#fbbf24', completed: '#10b981', failed: '#ef4444' };
+      const statusLabel = { sucesso: 'Sucesso', erro: 'Erro', executando: 'Em execução', in_progress: 'Em execução', processing: 'Processando', pending: 'Aguardando', completed: 'Concluído', failed: 'Falha' };
 
       grid.innerHTML = lista.map(ag => `
         <div style="background:var(--card-bg,#1a2035);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:20px;position:relative">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
             <div>
               <div style="font-size:15px;font-weight:600;color:var(--text)">${tipoLabel[ag.tipo] || ag.tipo}</div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-top:4px">${ag.nome || 'Sem título'}</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ag.empresa_id === null ? '🌐 <strong>Todas as Empresas</strong>' : (ag.empresa_nome || ag.empresa_cnpj || 'Empresa')}</div>
             </div>
             <div style="display:flex;gap:6px">
@@ -1115,7 +1117,7 @@ const app = {
             ${ag.tipo === 'totvs_sync' ? `<span style="background:rgba(16,185,129,.1);color:#34d399;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500">D-${ag.dias_offset}</span>` : ''}
             <span style="border-radius:6px;padding:3px 10px;font-size:11px;font-weight:500;background:${ag.ativo ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)'};color:${ag.ativo ? '#34d399' : '#f87171'}">${ag.ativo ? '● Ativo' : '○ Inativo'}</span>
           </div>
-          ${ag.ultimo_run ? `<div style="font-size:11px;color:var(--text-muted)">Último run: <strong style="color:${statusColor[ag.ultimo_status] || '#94a3b8'}">${ag.ultimo_status || '?'}</strong> em ${this.formatDate(ag.ultimo_run)}</div>` : '<div style="font-size:11px;color:var(--text-muted)">Nunca executado</div>'}
+          ${ag.ultimo_run ? `<div style="font-size:11px;color:var(--text-muted)">Último run: <strong style="color:${statusColor[ag.ultimo_status] || '#94a3b8'}">${statusLabel[ag.ultimo_status] || ag.ultimo_status || '?'}</strong> em ${this.formatDate(ag.ultimo_run)}</div>` : '<div style="font-size:11px;color:var(--text-muted)">Nunca executado</div>'}
         </div>
       `).join('');
 
@@ -1141,17 +1143,27 @@ const app = {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Nenhuma execução registrada ainda</td></tr>';
         return;
       }
-      const statusMap = { sucesso: { icon: '✅', color: '#10b981' }, erro: { icon: '❌', color: '#ef4444' }, executando: { icon: '⏳', color: '#f59e0b' }, parcial: { icon: '⚠️', color: '#f59e0b' } };
+      const statusMap = {
+        sucesso: { icon: '✅', color: '#10b981', label: 'Sucesso' },
+        erro: { icon: '❌', color: '#ef4444', label: 'Erro' },
+        executando: { icon: '⏳', color: '#f59e0b', label: 'Em execução pelo importador' },
+        in_progress: { icon: '⏳', color: '#f59e0b', label: 'Em execução pelo importador' },
+        processing: { icon: '⏳', color: '#f59e0b', label: 'Em execução' },
+        pending: { icon: '⏳', color: '#fbbf24', label: 'Aguardando' },
+        parcial: { icon: '⚠️', color: '#f59e0b', label: 'Parcial' },
+        completed: { icon: '✅', color: '#10b981', label: 'Concluído' },
+        failed: { icon: '❌', color: '#ef4444', label: 'Falha' }
+      };
       const tipoMap   = { totvs_sync: '🔄 TOTVS', dominio_envio: '📤 Domínio' };
       tbody.innerHTML = logs.map(l => {
-        const s = statusMap[l.status] || { icon: '?', color: '#64748b' };
+        const s = statusMap[l.status] || { icon: '?', color: '#64748b', label: l.status || 'Desconhecido' };
         const dur = l.duracao_ms ? (l.duracao_ms < 1000 ? l.duracao_ms + 'ms' : (l.duracao_ms / 1000).toFixed(1) + 's') : '—';
         const empNome = l.empresa_id === null ? '🌐 Todas as Empresas' : this.truncate(l.empresa_nome, 22);
         return `<tr>
           <td style="font-size:12px">${this.formatDate(l.executado_em)}</td>
           <td>${empNome}</td>
           <td>${tipoMap[l.tipo] || l.tipo}</td>
-          <td><span style="color:${s.color};font-weight:600">${s.icon} ${l.status}</span></td>
+          <td><span style="color:${s.color};font-weight:600">${s.icon} ${s.label}</span></td>
           <td style="text-align:center">${l.notas_encontradas || 0}</td>
           <td style="text-align:center">${l.notas_inseridas || 0}</td>
           <td style="text-align:center">${l.notas_enviadas || 0}</td>
@@ -1181,6 +1193,7 @@ const app = {
       const ag = this.agendamentosList.find(a => a.id === id);
       if (ag) {
         selectEmpresa.value = ag.empresa_id === null ? '0' : ag.empresa_id;
+        document.getElementById('modalAgNome').value = ag.nome || '';
         selectTipo.value = ag.tipo;
         selectOffset.value = ag.dias_offset || '2';
         checkAtivo.checked = !!ag.ativo;
@@ -1198,6 +1211,7 @@ const app = {
     } else {
       // Novo agendamento: valores padrão
       selectEmpresa.value = '0';
+      document.getElementById('modalAgNome').value = '';
       selectTipo.value = 'totvs_sync';
       selectOffset.value = '2';
       inputHorario.value = '06:00';
@@ -1215,6 +1229,7 @@ const app = {
   async salvarAgendamento() {
     const id           = document.getElementById('modalAgId').value;
     const empresa_id   = document.getElementById('modalAgEmpresa').value;
+    const nome         = document.getElementById('modalAgNome').value.trim();
     const tipo         = document.getElementById('modalAgTipo').value;
     const dias_offset  = document.getElementById('modalAgOffset').value;
     const horarioSel   = document.getElementById('modalAgHorario').value; // Ex: "06:00"
@@ -1228,6 +1243,7 @@ const app = {
     }
 
     if (!empresa_id) return this.toast('Selecione uma empresa', 'error');
+    if (!nome) return this.toast('Informe um nome para o agendamento', 'error');
     if (!cron_expressao) return this.toast('Defina o horário de execução', 'error');
 
     try {
@@ -1236,7 +1252,7 @@ const app = {
       const res = await fetch(url, {
         method, credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa_id, tipo, dias_offset, cron_expressao, ativo })
+        body: JSON.stringify({ empresa_id, tipo, nome, dias_offset, cron_expressao, ativo })
       });
       const data = await res.json();
       if (data.success) {

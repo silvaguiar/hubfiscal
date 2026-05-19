@@ -45,8 +45,30 @@ async function initialize() {
     await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS totvs_token_expiry TEXT");
     await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS dominio_token TEXT");
     await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS dominio_token_expiry TEXT");
+
+    await runSql(`CREATE TABLE IF NOT EXISTS totvs_jobs (
+      id SERIAL PRIMARY KEY,
+      empresa_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending',
+      mes_referencia TEXT,
+      current_page INTEGER DEFAULT 1,
+      current_item_index INTEGER DEFAULT 0,
+      page_size INTEGER DEFAULT 10,
+      total_processed INTEGER DEFAULT 0,
+      total_saved INTEGER DEFAULT 0,
+      total_skipped INTEGER DEFAULT 0,
+      total_errors INTEGER DEFAULT 0,
+      detalhes TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
   } catch (err) {
-    console.error('Erro ao migrar colunas de tokens:', err.message);
+    console.error('Erro ao migrar colunas de tokens ou criar tabela de jobs TOTVS:', err.message);
+  }
+  try {
+    await runSql('ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS nome TEXT');
+  } catch (err) {
+    console.error('Erro ao migrar coluna nome em agendamentos:', err.message);
   }
   await criarMasterSeNaoExistir();
 }
@@ -376,8 +398,8 @@ async function getAgendamentos() { return await queryAll(`SELECT a.*, e.razao_so
 async function getAgendamentoById(id) { return await queryOne('SELECT * FROM agendamentos WHERE id = ?', [id]); }
 async function createAgendamento(data) { 
   const empId = parseInt(data.empresa_id) === 0 ? null : parseInt(data.empresa_id);
-  await runSql(`INSERT INTO agendamentos (empresa_id, tipo, ativo, dias_offset, cron_expressao) VALUES (?, ?, ?, ?, ?)`, 
-    [empId, data.tipo, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : 1, parseInt(data.dias_offset) || 2, data.cron_expressao || '0 6 * * *']); 
+  await runSql(`INSERT INTO agendamentos (empresa_id, tipo, nome, ativo, dias_offset, cron_expressao) VALUES (?, ?, ?, ?, ?, ?)`, 
+    [empId, data.tipo, data.nome || null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : 1, parseInt(data.dias_offset) || 2, data.cron_expressao || '0 6 * * *']); 
   const rows = await queryAll('SELECT * FROM agendamentos ORDER BY id DESC LIMIT 1'); 
   return rows[0]; 
 }
@@ -385,8 +407,8 @@ async function updateAgendamento(id, data) {
   const ag = await getAgendamentoById(id);
   if (!ag) throw new Error('Agendamento não encontrado');
   const empId = data.empresa_id !== undefined ? (parseInt(data.empresa_id) === 0 ? null : parseInt(data.empresa_id)) : ag.empresa_id;
-  await runSql(`UPDATE agendamentos SET empresa_id = COALESCE(?, empresa_id), ativo = COALESCE(?, ativo), dias_offset = COALESCE(?, dias_offset), cron_expressao = COALESCE(?, cron_expressao), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-    [empId, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, data.dias_offset !== undefined ? parseInt(data.dias_offset) : null, data.cron_expressao || null, id]);
+  await runSql(`UPDATE agendamentos SET empresa_id = COALESCE(?, empresa_id), tipo = COALESCE(?, tipo), nome = COALESCE(?, nome), ativo = COALESCE(?, ativo), dias_offset = COALESCE(?, dias_offset), cron_expressao = COALESCE(?, cron_expressao), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
+    [empId, data.tipo || null, data.nome !== undefined ? data.nome : null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, data.dias_offset !== undefined ? parseInt(data.dias_offset) : null, data.cron_expressao || null, id]);
   return await getAgendamentoById(id);
 }
 async function updateAgendamentoStatus(id, status, resultado) { await runSql(`UPDATE agendamentos SET ultimo_run = CURRENT_TIMESTAMP, ultimo_status = ?, ultimo_resultado = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [status, resultado || null, id]); }
@@ -415,6 +437,52 @@ async function getLogsExecucao({ agendamento_id, empresa_id, limite, tipo, statu
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
   params.push(parseInt(limite) || 50);
   return await pool.query({ text: `SELECT l.*, e.razao_social as empresa_nome FROM logs_execucao l LEFT JOIN empresas e ON e.id = l.empresa_id ${whereClause} ORDER BY l.executado_em DESC LIMIT $${params.length}`, values: params }).then(r => r.rows);
+}
+
+async function createTotvsJob(data) {
+  const result = await pool.query({
+    text: `INSERT INTO totvs_jobs (empresa_id, mes_referencia, status, current_page, current_item_index, page_size, total_processed, total_saved, total_skipped, total_errors, detalhes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    values: [data.empresa_id || null, data.mes_referencia || null, data.status || 'pending', data.current_page || 1, data.current_item_index || 0, data.page_size || 10, data.total_processed || 0, data.total_saved || 0, data.total_skipped || 0, data.total_errors || 0, data.detalhes || '']
+  });
+  return result.rows[0];
+}
+
+async function getTotvsJobById(id) {
+  return await queryOne('SELECT * FROM totvs_jobs WHERE id = ?', [id]);
+}
+
+async function getNextTotvsJob() {
+  const job = await queryOne("SELECT * FROM totvs_jobs WHERE status IN ('pending', 'processing') ORDER BY updated_at ASC, created_at ASC LIMIT 1");
+  return job;
+}
+
+async function updateTotvsJob(id, data) {
+  let fields = [];
+  let values = [];
+  if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+  if (data.current_page !== undefined) { fields.push('current_page = ?'); values.push(data.current_page); }
+  if (data.current_item_index !== undefined) { fields.push('current_item_index = ?'); values.push(data.current_item_index); }
+  if (data.page_size !== undefined) { fields.push('page_size = ?'); values.push(data.page_size); }
+  if (data.total_processed !== undefined) { fields.push('total_processed = ?'); values.push(data.total_processed); }
+  if (data.total_saved !== undefined) { fields.push('total_saved = ?'); values.push(data.total_saved); }
+  if (data.total_skipped !== undefined) { fields.push('total_skipped = ?'); values.push(data.total_skipped); }
+  if (data.total_errors !== undefined) { fields.push('total_errors = ?'); values.push(data.total_errors); }
+  if (data.detalhes !== undefined) { fields.push('detalhes = ?'); values.push(data.detalhes); }
+  if (fields.length === 0) return;
+  fields.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+  await runSql(`UPDATE totvs_jobs SET ${fields.join(', ')} WHERE id = ?`, values);
+  return await getTotvsJobById(id);
+}
+
+async function listTotvsJobs({ status, limite } = {}) {
+  let where = [];
+  let params = [];
+  if (status) { params.push(status); where.push(`status = $${params.length}`); }
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  params.push(parseInt(limite) || 50);
+  const result = await pool.query({ text: `SELECT * FROM totvs_jobs ${whereClause} ORDER BY created_at DESC LIMIT $${params.length}`, values: params });
+  return result.rows;
 }
 
 async function updateEmpresaTokens(id, data) {
@@ -447,5 +515,5 @@ async function updateGlobalTokens(data) {
 }
 
 module.exports = {
-  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
+  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
 };

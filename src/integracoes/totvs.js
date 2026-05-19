@@ -108,7 +108,6 @@ class TotvsClient {
   }
 
   async buscarInvoices(filtros) {
-    const url = `${this.baseUrl}/api/totvsmoda/fiscal/v2/invoices/search`;
     let allInvoices = [];
     let currentPage = 1;
     let hasMore = true;
@@ -117,51 +116,57 @@ class TotvsClient {
     console.log(`🚀 Iniciando varredura via API (Padrão Postman): ${filtros.startDate} a ${filtros.endDate}`);
 
     while (hasMore) {
-      // Seguindo exatamente a estrutura JSON que funciona no Postman do usuário
-      const payload = {
-        filter: {
-          change: {
-            startDate: filtros.startDate,
-            endDate: filtros.endDate
-          },
-          branchCodeList: this.branch ? [parseInt(this.branch)] : [],
-          invoiceStatusList: ["E"],
-          eletronicInvoiceStatusList: ["A", "C"],
-          origin: 1
-        },
-        page: currentPage,
-        pageSize: pageSize
-      };
+      const result = await this.buscarInvoicesPage(filtros, currentPage, pageSize);
+      allInvoices = allInvoices.concat(result.data);
+      console.log(`   📄 Página ${currentPage}: ${result.data.length} notas encontradas.`);
 
-      try {
-        const headers = await this._getHeaders();
-        const response = await axios.post(url, payload, { headers, timeout: 30000 });
-        const data = response.data;
-        
-        const pageItems = data.items || data.data || [];
-        allInvoices = allInvoices.concat(pageItems);
-
-        console.log(`   📄 Página ${currentPage}: ${pageItems.length} notas encontradas.`);
-
-        if (data.hasNext || (pageItems.length === pageSize && pageItems.length > 0)) {
-          currentPage++;
-        } else {
-          hasMore = false;
-        }
-        if (currentPage > 500) hasMore = false;
-
-      } catch (err) {
-        if (err.response?.status === 401) {
-          console.log('🔄 Token expirado, renovando...');
-          await this.obterToken();
-          continue; 
-        }
-        const errorDetail = err.response?.data?.message || err.response?.data || err.message;
-        throw new Error(`Erro na consulta TOTVS: ${JSON.stringify(errorDetail)}`);
+      if (result.hasNext && currentPage < 500) {
+        currentPage++;
+      } else {
+        hasMore = false;
       }
     }
 
     return { data: allInvoices };
+  }
+
+  async buscarInvoicesPage(filtros, page = 1, pageSize = 20) {
+    const url = `${this.baseUrl}/api/totvsmoda/fiscal/v2/invoices/search`;
+    const payload = {
+      filter: {
+        change: {
+          startDate: filtros.startDate,
+          endDate: filtros.endDate
+        },
+        branchCodeList: this.branch ? [parseInt(this.branch)] : [],
+        invoiceStatusList: ["E"],
+        eletronicInvoiceStatusList: ["A", "C"],
+        origin: 1
+      },
+      page: page,
+      pageSize: pageSize
+    };
+
+    if (Array.isArray(filtros.personCpfCnpjList) && filtros.personCpfCnpjList.length > 0) {
+      payload.filter.personCpfCnpjList = filtros.personCpfCnpjList;
+    }
+
+    try {
+      const headers = await this._getHeaders();
+      const response = await axios.post(url, payload, { headers, timeout: 30000 });
+      const data = response.data;
+      const pageItems = data.items || data.data || [];
+      const hasNext = data.hasNext || (pageItems.length === pageSize && pageItems.length > 0);
+      return { data: pageItems, hasNext };
+    } catch (err) {
+      if (err.response?.status === 401) {
+        console.log('🔄 Token expirado, renovando...');
+        await this.obterToken();
+        return this.buscarInvoicesPage(filtros, page, pageSize);
+      }
+      const errorDetail = err.response?.data?.message || err.response?.data || err.message;
+      throw new Error(`Erro na consulta TOTVS: ${JSON.stringify(errorDetail)}`);
+    }
   }
 
   async exportarXml(chave) {
