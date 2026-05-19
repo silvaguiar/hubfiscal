@@ -1,22 +1,44 @@
 const TotvsClient = require('./totvs');
 const xmlParser = require('../sefaz/xml-parser');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 class TotvsService {
   constructor(db) {
     this.db = db;
-    this.logPath = path.join(__dirname, '..', '..', 'totvs_sync.log');
+    this.logPath = path.join(os.tmpdir(), 'totvs_sync.log');
+    this.logBuffer = '';
+    this.logId = null;
+  }
+
+  async createLogEntry(logData) {
+    try {
+      this.logId = await this.db.registrarLogExecucao(logData);
+    } catch (err) {
+      console.warn('Falha ao criar log de extração TOTVS:', err.message);
+    }
   }
 
   writeLog(msg) {
     const time = new Date().toLocaleTimeString();
     const line = `[${time}] ${msg}\n`;
-    fs.appendFileSync(this.logPath, line);
+    this.logBuffer += line;
+    try {
+      fs.appendFileSync(this.logPath, line);
+    } catch (err) {
+      console.warn('Não foi possível gravar log TOTVS em disco:', err.message);
+    }
+    if (this.logId) {
+      this.db.updateLogExecucao(this.logId, { detalhes: this.logBuffer }).catch(err => {
+        console.warn('Falha ao atualizar log TOTVS no banco:', err.message);
+      });
+    }
     console.log(line.trim());
   }
 
-  async extrair(empresaId, dataReferencia) {
+  async extrair(empresaId, dataReferencia, logId = null) {
+    this.logId = logId || this.logId;
     if (fs.existsSync(this.logPath)) fs.unlinkSync(this.logPath);
     
     let empresas = [];
@@ -92,6 +114,28 @@ class TotvsService {
     }
 
     const labelLog = isGlobal ? 'TODAS AS EMPRESAS ATIVAS' : empresas[0].razao_social;
+    const startTime = Date.now();
+
+    if (!this.logId) {
+      await this.createLogEntry({
+        agendamento_id: null,
+        empresa_id: empresaId ? parseInt(empresaId) : null,
+        tipo: 'totvs',
+        status: 'in_progress',
+        notas_encontradas: 0,
+        notas_inseridas: 0,
+        notas_enviadas: 0,
+        detalhes: `Iniciando TOTVS para ${labelLog} (${dataReferencia})`
+      });
+    } else {
+      await this.db.updateLogExecucao(this.logId, {
+        status: 'in_progress',
+        detalhes: `Iniciando TOTVS para ${labelLog} (${dataReferencia})`
+      }).catch(err => {
+        console.warn('Falha ao atualizar log TOTVS no banco:', err.message);
+      });
+    }
+
     this.writeLog(`🚀 Iniciando para ${labelLog} (${dataReferencia})`);
 
     try {
@@ -197,9 +241,26 @@ class TotvsService {
       }
 
       this.writeLog(`🏁 Fim: ${salvos} novos, ${pulados} já existiam, ${erros} falhas, ${ignorados} sem chave válida.`);
+      await this.db.updateLogExecucao(this.logId, {
+        status: 'completed',
+        notas_encontradas: invoices.length,
+        notas_inseridas: salvos,
+        notas_enviadas: 0,
+        detalhes: this.logBuffer,
+        duracao_ms: Date.now() - startTime
+      }).catch(err => {
+        console.warn('Falha ao finalizar log TOTVS no banco:', err.message);
+      });
       return { success: true, encontradas: invoices.length, salvas: salvos, puladas: pulados, erros, ignorados };
     } catch (err) {
       this.writeLog(`❌ Erro: ${err.message}`);
+      await this.db.updateLogExecucao(this.logId, {
+        status: 'failed',
+        detalhes: this.logBuffer,
+        duracao_ms: Date.now() - startTime
+      }).catch(err => {
+        console.warn('Falha ao marcar log TOTVS como falho no banco:', err.message);
+      });
       throw err;
     }
   }

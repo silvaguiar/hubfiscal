@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const XLSX = require('xlsx');
 const SefazClient = require('../sefaz/client');
@@ -494,32 +495,39 @@ module.exports = function (db, upload) {
   // ── Integração TOTVS ──────────────────────────────────
   router.get('/totvs/logs', async (req, res) => {
     try {
-      const fs = require('fs');
-      const logPath = path.join(__dirname, '..', '..', 'totvs_sync.log');
-      if (fs.existsSync(logPath)) {
-        res.send(fs.readFileSync(logPath, 'utf8'));
-      } else {
-        res.send('Aguardando início do processo...');
+      const logs = await db.getLogsExecucao({ tipo: 'totvs', limite: 1 });
+      if (logs && logs.length > 0) {
+        const lastLog = logs[0];
+        return res.send(lastLog.detalhes || `Status: ${lastLog.status || 'pendente'}`);
       }
+      res.send('Aguardando início do processo...');
     } catch (err) { res.status(500).send(err.message); }
   });
 
   router.post('/totvs/extrair', express.json(), async (req, res) => {
     try {
       const { empresaId, mesReferencia } = req.body;
-      const service = new TotvsService(db);
-      
-      // Envia resposta imediata para evitar timeout
-      res.json({ success: true, message: 'Extração TOTVS iniciada em segundo plano.' });
+      const initialLogId = await db.registrarLogExecucao({
+        agendamento_id: null,
+        empresa_id: empresaId ? parseInt(empresaId) : null,
+        tipo: 'totvs',
+        status: 'started',
+        notas_encontradas: 0,
+        notas_inseridas: 0,
+        notas_enviadas: 0,
+        detalhes: 'A extração TOTVS foi iniciada. Aguardando o processo iniciar...'
+      });
 
-      service.extrair(empresaId, mesReferencia)
+      const service = new TotvsService(db);
+      service.extrair(empresaId, mesReferencia, initialLogId)
         .then(result => {
           console.log(`[TOTVS] Finalizado para empresa ${empresaId}:`, result);
         })
         .catch(err => {
           console.error(`[TOTVS] Erro na extração para empresa ${empresaId}:`, err.message);
         });
-
+      
+      res.json({ success: true, message: 'Extração TOTVS iniciada em segundo plano.' });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
