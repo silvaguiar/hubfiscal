@@ -8,6 +8,36 @@ const { requireAuth } = require('../auth/middleware');
 
 module.exports = function (db) {
 
+  // GET /api/auth/diagnostics — rota temporária para testar as variáveis e conexão na Vercel
+  router.get('/diagnostics', async (req, res) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      const maskedUrl = dbUrl ? dbUrl.replace(/:([^@]+)@/, ':****@') : 'UNDEFINED';
+      
+      let dbTest = 'Not started';
+      try {
+        const pool = await db.getDb();
+        const testRes = await pool.query('SELECT 1+1 as result');
+        dbTest = `Success: ${testRes.rows[0].result}`;
+      } catch (dbErr) {
+        dbTest = `Failed: ${dbErr.message}`;
+      }
+      
+      res.json({
+        env: {
+          DATABASE_URL_DEFINED: !!dbUrl,
+          DATABASE_URL_LENGTH: dbUrl ? dbUrl.length : 0,
+          DATABASE_URL_MASKED: maskedUrl,
+          NODE_ENV: process.env.NODE_ENV,
+          VERCEL: process.env.VERCEL
+        },
+        dbTest
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/auth/login
   router.post('/login', async (req, res) => {
     try {
