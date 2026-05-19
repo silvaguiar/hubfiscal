@@ -148,12 +148,6 @@ class TotvsClient {
       filter.branchCodeList = [parseInt(this.branch)];
     }
 
-    // CNPJs limpos (só dígitos) para o filtro de pessoa
-    if (Array.isArray(filtros.personCpfCnpjList) && filtros.personCpfCnpjList.length > 0) {
-      const cnpjsLimpos = filtros.personCpfCnpjList.map(c => c.replace(/\D/g, '')).filter(Boolean);
-      if (cnpjsLimpos.length > 0) filter.personCpfCnpjList = cnpjsLimpos;
-    }
-
     const payload = { filter, page, pageSize };
 
     console.log(`📤 TOTVS payload (pág ${page}):`, JSON.stringify(payload));
