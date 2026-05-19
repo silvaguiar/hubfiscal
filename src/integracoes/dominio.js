@@ -17,17 +17,18 @@ class DominioClient {
     this.clientId = (config.dominio_client_id || '').trim();
     this.clientSecret = (config.dominio_client_secret || '').trim();
     this.integrationKey = (config.dominio_integration_key || '').trim();
-    
+    this.cacheKey = `${this.authUrl}|${this.clientId}`;
+
     // Inicializa o cache com os valores do banco se ainda não existir
-    if (!tokenCache[this.clientId]) {
-      tokenCache[this.clientId] = {
+    if (!tokenCache[this.cacheKey]) {
+      tokenCache[this.cacheKey] = {
         token: config.dominio_token || null,
         expiry: config.dominio_token_expiry ? parseInt(config.dominio_token_expiry) : null
       };
     } else {
-      if (config.dominio_token && (!tokenCache[this.clientId].expiry || parseInt(config.dominio_token_expiry) > tokenCache[this.clientId].expiry)) {
-        tokenCache[this.clientId].token = config.dominio_token;
-        tokenCache[this.clientId].expiry = parseInt(config.dominio_token_expiry);
+      if (config.dominio_token && (!tokenCache[this.cacheKey].expiry || parseInt(config.dominio_token_expiry) > tokenCache[this.cacheKey].expiry)) {
+        tokenCache[this.cacheKey].token = config.dominio_token;
+        tokenCache[this.cacheKey].expiry = parseInt(config.dominio_token_expiry);
       }
     }
     
@@ -35,10 +36,10 @@ class DominioClient {
   }
 
   _getCache() {
-    if (!tokenCache[this.clientId]) {
-      tokenCache[this.clientId] = { token: null, expiry: null };
+    if (!tokenCache[this.cacheKey]) {
+      tokenCache[this.cacheKey] = { token: null, expiry: null };
     }
-    return tokenCache[this.clientId];
+    return tokenCache[this.cacheKey];
   }
 
   get accessToken() { return this._getCache().token; }

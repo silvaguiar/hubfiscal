@@ -19,6 +19,20 @@ const app = {
         document.getElementById('sidebar').classList.toggle('open');
       });
     }
+
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+          overlay.classList.remove('active');
+        }
+      });
+    });
+
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(modal => modal.classList.remove('active'));
+      }
+    });
   },
 
   setupNavigation() {
@@ -1049,6 +1063,7 @@ const app = {
     try {
       const res  = await fetch('/api/agendamentos', { credentials: 'include' });
       const lista = await res.json();
+      this.agendamentosList = lista; // Armazena a lista para uso na edição
       const grid = document.getElementById('agendamentosGrid');
 
       // Popula select de empresa no modal
@@ -1149,9 +1164,47 @@ const app = {
   abrirModalAgendamento(id = null) {
     document.getElementById('modalAgId').value = id || '';
     document.getElementById('modalAgendamentoTitulo').textContent = id ? 'Editar Agendamento' : 'Novo Agendamento';
-    document.getElementById('modalAgTipo').addEventListener('change', (e) => {
-      document.getElementById('modalAgOffsetGroup').style.display = e.target.value === 'totvs_sync' ? 'block' : 'none';
-    });
+    
+    const selectTipo = document.getElementById('modalAgTipo');
+    const selectEmpresa = document.getElementById('modalAgEmpresa');
+    const selectOffset = document.getElementById('modalAgOffset');
+    const inputHorario = document.getElementById('modalAgHorario');
+    const checkAtivo = document.getElementById('modalAgAtivo');
+    
+    // Configura o evento do tipo para ocultar/exibir offset
+    const toggleOffset = () => {
+      document.getElementById('modalAgOffsetGroup').style.display = selectTipo.value === 'totvs_sync' ? 'block' : 'none';
+    };
+    selectTipo.onchange = toggleOffset;
+
+    if (id && this.agendamentosList) {
+      const ag = this.agendamentosList.find(a => a.id === id);
+      if (ag) {
+        selectEmpresa.value = ag.empresa_id === null ? '0' : ag.empresa_id;
+        selectTipo.value = ag.tipo;
+        selectOffset.value = ag.dias_offset || '2';
+        checkAtivo.checked = !!ag.ativo;
+        
+        // Converte o cron back para time (ex: "0 6 * * *" -> "06:00")
+        if (ag.cron_expressao) {
+          const parts = ag.cron_expressao.split(' ');
+          if (parts.length >= 2) {
+            const mm = parts[0].padStart(2, '0');
+            const hh = parts[1].padStart(2, '0');
+            inputHorario.value = `${hh}:${mm}`;
+          }
+        }
+      }
+    } else {
+      // Novo agendamento: valores padrão
+      selectEmpresa.value = '0';
+      selectTipo.value = 'totvs_sync';
+      selectOffset.value = '2';
+      inputHorario.value = '06:00';
+      checkAtivo.checked = true;
+    }
+    
+    toggleOffset();
     document.getElementById('modalAgendamento').classList.add('active');
   },
 

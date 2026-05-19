@@ -244,11 +244,16 @@ async function getNotaByChave(chave) { return await queryOne('SELECT * FROM nota
 async function deleteNota(id) { await runSql('DELETE FROM notas_fiscais WHERE id = ?', [id]); }
 
 async function getEstatisticas(empresaId = null) {
-  const filtro = empresaId ? `WHERE empresa_id = ${empresaId}` : '';
-  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
-  const entradas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='entrada'" : "WHERE tipo='entrada'"}`);
-  const saidas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='saida'" : "WHERE tipo='saida'"}`);
-  const ultima = await queryOne(`SELECT MAX(created_at) as data FROM notas_fiscais ${filtro}`);
+  const params = [];
+  let where = '';
+  if (empresaId) {
+    params.push(empresaId);
+    where = `WHERE empresa_id = $${params.length}`;
+  }
+  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${where}`, params);
+  const entradas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${where ? where + " AND tipo='entrada'" : "WHERE tipo='entrada'"}`, params);
+  const saidas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${where ? where + " AND tipo='saida'" : "WHERE tipo='saida'"}`, params);
+  const ultima = await queryOne(`SELECT MAX(created_at) as data FROM notas_fiscais ${where}`, params);
   return {
     total: total ? parseInt(total.count) : 0,
     entradas: { count: entradas ? parseInt(entradas.count) : 0, valor: entradas ? entradas.valor : 0 },
@@ -287,21 +292,44 @@ async function updateDominioStatus(notaId, status, erro = null, batchId = null) 
 }
 
 async function getNotasParaDominio(empresaId, filtros = {}) {
-  let where = ['empresa_id = $1']; let params = [empresaId];
-  if (!filtros.reenviar) { where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)"); } else { where.push("(dominio_status = 'erro')"); }
-  if (filtros.dataInicio) { params.push(filtros.dataInicio); where.push(`data_emissao >= $${params.length}`); }
-  if (filtros.dataFim) { params.push(filtros.dataFim + 'T23:59:59'); where.push(`data_emissao <= $${params.length}`); }
-  if (filtros.tipo && filtros.tipo !== 'todos') { params.push(filtros.tipo); where.push(`tipo = $${params.length}`); }
-  const result = await pool.query({ text: 'WHERE ' + where.join(' AND ') ? `SELECT * FROM notas_fiscais WHERE ${where.join(' AND ')} ORDER BY data_emissao DESC` : `SELECT * FROM notas_fiscais ORDER BY data_emissao DESC`, values: params });
+  const where = ['empresa_id = $1'];
+  const params = [empresaId];
+
+  if (!filtros.reenviar) {
+    where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)");
+  } else {
+    where.push("dominio_status = 'erro'");
+  }
+
+  if (filtros.dataInicio) {
+    params.push(filtros.dataInicio);
+    where.push(`data_emissao >= $${params.length}`);
+  }
+  if (filtros.dataFim) {
+    params.push(filtros.dataFim + 'T23:59:59');
+    where.push(`data_emissao <= $${params.length}`);
+  }
+  if (filtros.tipo && filtros.tipo !== 'todos') {
+    params.push(filtros.tipo);
+    where.push(`tipo = $${params.length}`);
+  }
+
+  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const result = await pool.query({ text: `SELECT * FROM notas_fiscais ${whereClause} ORDER BY data_emissao DESC`, values: params });
   return result.rows;
 }
 
 async function getDominioStats(empresaId = null) {
-  const filtro = empresaId ? `WHERE empresa_id = ${empresaId}` : '';
-  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
-  const enviadas = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'enviado'" : "WHERE dominio_status = 'enviado'"}`);
-  const pendentes = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND (dominio_status = 'pendente' OR dominio_status IS NULL)" : "WHERE (dominio_status = 'pendente' OR dominio_status IS NULL)"}`);
-  const erros = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'erro'" : "WHERE dominio_status = 'erro'"}`);
+  const params = [];
+  let where = '';
+  if (empresaId) {
+    params.push(empresaId);
+    where = `WHERE empresa_id = $${params.length}`;
+  }
+  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${where}`, params);
+  const enviadas = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${where ? where + " AND dominio_status = 'enviado'" : "WHERE dominio_status = 'enviado'"}`, params);
+  const pendentes = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${where ? where + " AND (dominio_status = 'pendente' OR dominio_status IS NULL)" : "WHERE (dominio_status = 'pendente' OR dominio_status IS NULL)"}`, params);
+  const erros = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${where ? where + " AND dominio_status = 'erro'" : "WHERE dominio_status = 'erro'"}`, params);
   return { total: total ? parseInt(total.count) : 0, enviadas: enviadas ? parseInt(enviadas.count) : 0, pendentes: pendentes ? parseInt(pendentes.count) : 0, erros: erros ? parseInt(erros.count) : 0 };
 }
 

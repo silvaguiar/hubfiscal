@@ -85,14 +85,18 @@ class DominioService {
       return { success: true, enviadas: 0, erros: 0, total: 0 };
     }
 
-    // Testa conexão primeiro
-    this.writeLog('🔑 Testando conexão com o Domínio...');
-    const testeConexao = await client.testarConexao();
-    if (!testeConexao.success) {
-      this.writeLog(`❌ Falha na conexão: ${testeConexao.message}`);
-      throw new Error(`Falha na conexão com Domínio: ${testeConexao.message}`);
+    const tokenValido = empresa.dominio_token && empresa.dominio_token_expiry && Date.now() < parseInt(empresa.dominio_token_expiry);
+    if (!tokenValido) {
+      this.writeLog('🔑 Token Domínio expirado ou inexistente. Testando conexão para gerar/renovar token...');
+      const testeConexao = await client.testarConexao();
+      if (!testeConexao.success) {
+        this.writeLog(`❌ Falha na conexão: ${testeConexao.message}`);
+        throw new Error(`Falha na conexão com Domínio: ${testeConexao.message}`);
+      }
+      this.writeLog('✅ Conexão OK. Token gerado/renovado com sucesso. Iniciando envio...');
+    } else {
+      this.writeLog('🔑 Token Domínio válido em cache. Enviando sem nova geração de token.');
     }
-    this.writeLog('✅ Conexão OK. Iniciando envio...');
 
     let enviadas = 0;
     let errosCount = 0;
