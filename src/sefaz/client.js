@@ -18,7 +18,7 @@ class SefazClient {
     this.cnpj = config.cnpj.replace(/\D/g, '');
     this.uf = config.uf;
     this.ambiente = config.ambiente || 'producao';
-    this.certificadoPath = config.certificadoPath;
+    this.certificadoBase64 = config.certificadoBase64;
     this.certificadoSenha = config.certificadoSenha;
     this.httpsAgent = null;
   }
@@ -29,11 +29,11 @@ class SefazClient {
   _createAgent() {
     if (this.httpsAgent) return this.httpsAgent;
 
-    if (!this.certificadoPath || !fs.existsSync(this.certificadoPath)) {
-      throw new Error('Certificado digital A1 (.pfx) não encontrado');
+    if (!this.certificadoBase64) {
+      throw new Error('Certificado digital A1 não configurado (Base64 ausente)');
     }
 
-    const pfxBuffer = fs.readFileSync(this.certificadoPath);
+    const pfxBuffer = Buffer.from(this.certificadoBase64, 'base64');
 
     this.httpsAgent = new https.Agent({
       pfx: pfxBuffer,

@@ -7,6 +7,9 @@
 const axios = require('axios');
 const FormData = require('form-data');
 
+// Cache global de tokens na memória
+const tokenCache = {};
+
 class DominioClient {
   constructor(config) {
     this.authUrl = (config.dominio_auth_url || 'https://auth.thomsonreuters.com/oauth/token').replace(/\/+$/, '').trim();
@@ -14,9 +17,34 @@ class DominioClient {
     this.clientId = (config.dominio_client_id || '').trim();
     this.clientSecret = (config.dominio_client_secret || '').trim();
     this.integrationKey = (config.dominio_integration_key || '').trim();
-    this.accessToken = null;
-    this.tokenExpiry = null;
+    
+    // Inicializa o cache com os valores do banco se ainda não existir
+    if (!tokenCache[this.clientId]) {
+      tokenCache[this.clientId] = {
+        token: config.dominio_token || null,
+        expiry: config.dominio_token_expiry ? parseInt(config.dominio_token_expiry) : null
+      };
+    } else {
+      if (config.dominio_token && (!tokenCache[this.clientId].expiry || parseInt(config.dominio_token_expiry) > tokenCache[this.clientId].expiry)) {
+        tokenCache[this.clientId].token = config.dominio_token;
+        tokenCache[this.clientId].expiry = parseInt(config.dominio_token_expiry);
+      }
+    }
+    
+    this.onTokenUpdated = config.onTokenUpdated || null;
   }
+
+  _getCache() {
+    if (!tokenCache[this.clientId]) {
+      tokenCache[this.clientId] = { token: null, expiry: null };
+    }
+    return tokenCache[this.clientId];
+  }
+
+  get accessToken() { return this._getCache().token; }
+  set accessToken(val) { this._getCache().token = val; }
+  get tokenExpiry() { return this._getCache().expiry; }
+  set tokenExpiry(val) { this._getCache().expiry = val; }
 
   /**
    * Obtém token de acesso OAuth 2.0
@@ -24,6 +52,11 @@ class DominioClient {
   async obterToken() {
     if (!this.clientId || !this.clientSecret) {
       throw new Error('Client ID e Client Secret do Domínio não configurados.');
+    }
+
+    // Se o token existe e não expirou, reutiliza para evitar bloqueios de quota
+    if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      return this.accessToken;
     }
 
     try {
@@ -47,6 +80,14 @@ class DominioClient {
         this.accessToken = response.data.access_token;
         const expiresIn = response.data.expires_in || 3600;
         this.tokenExpiry = Date.now() + (expiresIn - 60) * 1000;
+        
+        // Dispara o callback para salvar no banco de dados
+        if (this.onTokenUpdated) {
+          this.onTokenUpdated(this.accessToken, String(this.tokenExpiry)).catch(err => {
+            console.error('Erro ao persistir token da Domínio:', err.message);
+          });
+        }
+        
         return this.accessToken;
       }
 
@@ -193,14 +234,27 @@ class DominioClient {
 
     try {
       const form = new FormData();
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip();
 
       xmlFiles.forEach((file, index) => {
-        form.append('file[]', Buffer.from(file.xml, 'utf-8'), {
-          filename: `NFe_${file.chave || index}.xml`,
-          contentType: 'application/xml'
-        });
+        zip.addFile(`NFe_${file.chave || index}.xml`, Buffer.from(file.xml, 'utf-8'));
       });
+
+      const zipBuffer = zip.toBuffer();
+
+      form.append('file[]', zipBuffer, {
+        filename: `lote_nfe_${Date.now()}.zip`,
+        contentType: 'application/zip'
+      });
+      
       form.append('query', JSON.stringify({ boxeFile: false }), { contentType: 'application/json' });
+
+      const firstType = xmlFiles[0].tipo;
+      const allSameType = xmlFiles.every(f => f.tipo === firstType);
+      if (allSameType && firstType) {
+        form.append('documentType', firstType === 'entrada' ? 'INPUT' : 'OUTPUT');
+      }
 
       const headers = await this._getHeaders(null);
       const response = await axios.post(url, form, {

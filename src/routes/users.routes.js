@@ -9,9 +9,9 @@ const { requireAuth, requirePerfil } = require('../auth/middleware');
 module.exports = function (db) {
 
   // GET /api/usuarios — lista usuários (master/admin)
-  router.get('/', requireAuth, requirePerfil('admin', 'master'), (req, res) => {
+  router.get('/', requireAuth, requirePerfil('admin', 'master'), async (req, res) => {
     try {
-      const usuarios = db.getUsuarios();
+      const usuarios = await db.getUsuarios();
       // Nunca retorna o hash da senha
       res.json(usuarios.map(u => ({
         id: u.id, nome: u.nome, email: u.email,
@@ -33,7 +33,7 @@ module.exports = function (db) {
       }
 
       const hash = await hashSenha(senha);
-      const usuario = db.createUsuario({ nome, email: email.toLowerCase(), senha_hash: hash, perfil: perfil || 'viewer' });
+      const usuario = await db.createUsuario({ nome, email: email.toLowerCase(), senha_hash: hash, perfil: perfil || 'viewer' });
       res.json({ success: true, usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email, perfil: usuario.perfil } });
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE')) return res.status(409).json({ error: 'E-mail já cadastrado.' });
@@ -48,7 +48,7 @@ module.exports = function (db) {
       const { nome, email, senha, perfil, ativo } = req.body;
 
       // Admin não pode alterar um master
-      const alvo = db.getUsuarioById(id);
+      const alvo = await db.getUsuarioById(id);
       if (!alvo) return res.status(404).json({ error: 'Usuário não encontrado.' });
       if (req.usuario.perfil === 'admin' && alvo.perfil === 'master') {
         return res.status(403).json({ error: 'Não é possível alterar um usuário master.' });
@@ -57,17 +57,17 @@ module.exports = function (db) {
       const update = { nome, email: email ? email.toLowerCase() : undefined, perfil, ativo };
       if (senha) update.senha_hash = await hashSenha(senha);
 
-      const updated = db.updateUsuario(id, update);
+      const updated = await db.updateUsuario(id, update);
       res.json({ success: true, usuario: { id: updated.id, nome: updated.nome, email: updated.email, perfil: updated.perfil, ativo: updated.ativo } });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // DELETE /api/usuarios/:id — remover usuário (apenas master)
-  router.delete('/:id', requireAuth, requirePerfil('master'), (req, res) => {
+  router.delete('/:id', requireAuth, requirePerfil('master'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (id === req.usuario.id) return res.status(400).json({ error: 'Você não pode excluir seu próprio usuário.' });
-      db.deleteUsuario(id);
+      await db.deleteUsuario(id);
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });

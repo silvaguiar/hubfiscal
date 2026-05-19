@@ -550,11 +550,27 @@
 
       <!-- Histórico de execuções -->
       <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
           <h3>Histórico de Execuções</h3>
-          <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="app.carregarLogsAgendamentos()">
-            <span class="material-icons-round" style="font-size:16px">refresh</span>Atualizar
-          </button>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select id="filterLogEmpresa" class="input-field" style="width:180px;height:32px;font-size:12px;padding:4px" onchange="app.carregarLogsAgendamentos()">
+              <option value="">Todas as Empresas</option>
+            </select>
+            <select id="filterLogTipo" class="input-field" style="width:150px;height:32px;font-size:12px;padding:4px" onchange="app.carregarLogsAgendamentos()">
+              <option value="">Todos os Tipos</option>
+              <option value="totvs_sync">Sync TOTVS</option>
+              <option value="dominio_envio">Envio Domínio</option>
+            </select>
+            <select id="filterLogStatus" class="input-field" style="width:130px;height:32px;font-size:12px;padding:4px" onchange="app.carregarLogsAgendamentos()">
+              <option value="">Todos os Status</option>
+              <option value="sucesso">Sucesso</option>
+              <option value="erro">Erro</option>
+              <option value="executando">Executando</option>
+            </select>
+            <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="app.carregarLogsAgendamentos()">
+              <span class="material-icons-round" style="font-size:16px">refresh</span>Atualizar
+            </button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -604,24 +620,8 @@
         </div>
         <div class="form-group">
           <label>Horário de Execução</label>
-          <select id="modalAgHorario" class="input-field">
-            <option value="0 6 * * *">Todo dia às 06:00</option>
-            <option value="0 7 * * *">Todo dia às 07:00</option>
-            <option value="0 8 * * *">Todo dia às 08:00</option>
-            <option value="0 12 * * *">Todo dia às 12:00</option>
-            <option value="0 18 * * *">Todo dia às 18:00</option>
-            <option value="0 22 * * *">Todo dia às 22:00</option>
-            <option value="0 0 * * *">Todo dia à meia-noite</option>
-            <option value="0 */4 * * *">A cada 4 horas</option>
-            <option value="0 */6 * * *">A cada 6 horas</option>
-            <option value="0 */12 * * *">A cada 12 horas</option>
-            <option value="custom">⚙️ Personalizado (cron)</option>
-          </select>
-        </div>
-        <div class="form-group" id="modalAgCronCustomGroup" style="display:none">
-          <label>Expressão Cron Personalizada</label>
-          <input type="text" id="modalAgCron" class="input-field" placeholder="Ex: 0 6 * * 1-5 (seg-sex 06h)">
-          <small style="color:var(--text-muted);font-size:11px;margin-top:4px;display:block">Formato: minuto hora dia mês dia_semana</small>
+          <input type="time" id="modalAgHorario" class="input-field" value="06:00" required>
+          <small style="color:var(--text-muted);font-size:11px;margin-top:4px;display:block">O sistema será executado todos os dias no horário exato escolhido.</small>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
           <input type="checkbox" id="modalAgAtivo" checked style="width:18px;height:18px;accent-color:#6366f1">

@@ -1,401 +1,110 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
+require('dotenv').config();
 
-const DB_DIR = path.join(__dirname, '..', '..', 'data');
-const DB_PATH = path.join(DB_DIR, 'nfe.db');
+// Configuração do PostgreSQL (Supabase)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || process.env.SUPABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-let db = null;
+async function getDb() { return pool; }
+function saveDb() {} // No-op for PostgreSQL
 
-async function getDb() {
-  if (db) return db;
-  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-  const SQL = await initSqlJs();
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
-  return db;
+function buildQuery(sql, params) {
+  let paramCount = 1;
+  const newSql = sql.replace(/\?/g, () => `$${paramCount++}`);
+  // SQLite usa datetime('now'), PostgreSQL usa CURRENT_TIMESTAMP
+  const pgSql = newSql.replace(/datetime\('now'\)/g, 'CURRENT_TIMESTAMP');
+  return { text: pgSql, values: params || [] };
 }
 
-function saveDb() {
-  if (!db) return;
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-    console.log('💾 Banco de dados salvo no disco:', DB_PATH);
-  } catch (err) {
-    console.error('❌ ERRO CRÍTICO AO SALVAR BANCO:', err.message);
-  }
+async function queryOne(sql, params = []) {
+  const query = buildQuery(sql, params);
+  const result = await pool.query(query);
+  return result.rows[0] || null;
+}
+
+async function queryAll(sql, params = []) {
+  const query = buildQuery(sql, params);
+  const result = await pool.query(query);
+  return result.rows;
+}
+
+async function runSql(sql, params = []) {
+  const query = buildQuery(sql, params);
+  await pool.query(query);
 }
 
 async function initialize() {
-  const conn = await getDb();
-
-  // ── Tabela legada (mantida para não quebrar) ──────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS configuracoes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cnpj TEXT NOT NULL,
-      razao_social TEXT DEFAULT '',
-      uf TEXT NOT NULL DEFAULT '35',
-      ambiente TEXT NOT NULL DEFAULT 'producao',
-      certificado_nome TEXT DEFAULT '',
-      certificado_senha TEXT DEFAULT '',
-      ultimo_nsu TEXT DEFAULT '000000000000000',
-      totvs_base_url TEXT DEFAULT '',
-      totvs_user TEXT DEFAULT '',
-      totvs_password TEXT DEFAULT '',
-      totvs_client_id TEXT DEFAULT '',
-      totvs_client_secret TEXT DEFAULT '',
-      totvs_grant_type TEXT DEFAULT 'password',
-      totvs_token TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // ── Tabela de Empresas (multi-CNPJ) ──────────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS empresas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cnpj TEXT UNIQUE NOT NULL,
-      razao_social TEXT DEFAULT '',
-      nome_fantasia TEXT DEFAULT '',
-      tipo TEXT NOT NULL DEFAULT 'matriz',
-      matriz_id INTEGER REFERENCES empresas(id),
-      uf TEXT NOT NULL DEFAULT 'SP',
-      ambiente TEXT NOT NULL DEFAULT 'producao',
-      certificado_nome TEXT DEFAULT '',
-      certificado_senha TEXT DEFAULT '',
-      certificado_arquivo TEXT DEFAULT '',
-      ultimo_nsu TEXT DEFAULT '000000000000000',
-      totvs_base_url TEXT DEFAULT '',
-      totvs_user TEXT DEFAULT '',
-      totvs_password TEXT DEFAULT '',
-      totvs_token TEXT DEFAULT '',
-      totvs_client_id TEXT DEFAULT '',
-      totvs_client_secret TEXT DEFAULT '',
-      totvs_branch TEXT DEFAULT '',
-      totvs_grant_type TEXT DEFAULT 'password',
-      totvs_ativo INTEGER DEFAULT 0,
-      ativo INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // ── Tabela de Notas Fiscais ───────────────────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS notas_fiscais (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      empresa_id INTEGER,
-      chave_acesso TEXT UNIQUE NOT NULL,
-      numero_nf TEXT,
-      serie TEXT,
-      data_emissao TEXT,
-      valor_total REAL DEFAULT 0,
-      emitente_cnpj TEXT,
-      emitente_nome TEXT,
-      destinatario_cnpj TEXT,
-      destinatario_nome TEXT,
-      tipo TEXT CHECK(tipo IN ('entrada', 'saida')),
-      situacao TEXT DEFAULT 'autorizada',
-      nsu TEXT,
-      xml_completo TEXT,
-      schema_type TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  const indexes = [
-    'CREATE INDEX IF NOT EXISTS idx_nf_empresa ON notas_fiscais(empresa_id)',
-    'CREATE INDEX IF NOT EXISTS idx_nf_tipo ON notas_fiscais(tipo)',
-    'CREATE INDEX IF NOT EXISTS idx_nf_emitente ON notas_fiscais(emitente_cnpj)',
-    'CREATE INDEX IF NOT EXISTS idx_nf_destinatario ON notas_fiscais(destinatario_cnpj)',
-    'CREATE INDEX IF NOT EXISTS idx_nf_data ON notas_fiscais(data_emissao)',
-    'CREATE INDEX IF NOT EXISTS idx_nf_chave ON notas_fiscais(chave_acesso)',
-    'CREATE INDEX IF NOT EXISTS idx_empresas_cnpj ON empresas(cnpj)'
-  ];
-
-  // ── Tabela de Configuração de Robôs por UF ────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS robos_sefaz_uf (
-      uf TEXT PRIMARY KEY,
-      portal_url TEXT DEFAULT '',
-      ativo INTEGER DEFAULT 1,
-      requer_captcha INTEGER DEFAULT 1,
-      instrucoes TEXT DEFAULT '',
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Inserir UFs padrão
+  console.log('✅ Banco de dados PostgreSQL conectado (Supabase)');
   try {
-    conn.run(`INSERT OR IGNORE INTO robos_sefaz_uf (uf, portal_url) VALUES ('PB', 'https://www.receita.pb.gov.br/')`);
-    conn.run(`INSERT OR IGNORE INTO robos_sefaz_uf (uf, portal_url) VALUES ('SP', 'https://www.fazenda.sp.gov.br/')`);
-  } catch (e) {}
-
-  // ── Tabela de Usuários ────────────────────────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS usuarios (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      senha_hash TEXT NOT NULL,
-      perfil TEXT NOT NULL DEFAULT 'viewer',
-      ativo INTEGER DEFAULT 1,
-      ultimo_login DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // ── Tabela de Agendamentos ────────────────────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS agendamentos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      empresa_id INTEGER REFERENCES empresas(id),
-      tipo TEXT NOT NULL,
-      ativo INTEGER DEFAULT 1,
-      dias_offset INTEGER DEFAULT 2,
-      cron_expressao TEXT DEFAULT '0 6 * * *',
-      ultimo_run DATETIME,
-      ultimo_status TEXT,
-      ultimo_resultado TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // ── Tabela de Logs de Execução ────────────────────────────────────────
-  conn.run(`
-    CREATE TABLE IF NOT EXISTS logs_execucao (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agendamento_id INTEGER REFERENCES agendamentos(id),
-      empresa_id INTEGER REFERENCES empresas(id),
-      tipo TEXT NOT NULL,
-      status TEXT NOT NULL,
-      notas_encontradas INTEGER DEFAULT 0,
-      notas_inseridas INTEGER DEFAULT 0,
-      notas_enviadas INTEGER DEFAULT 0,
-      detalhes TEXT,
-      duracao_ms INTEGER,
-      executado_em DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  try { conn.run('CREATE INDEX IF NOT EXISTS idx_logs_agendamento ON logs_execucao(agendamento_id)'); } catch(_) {}
-  try { conn.run('CREATE INDEX IF NOT EXISTS idx_logs_empresa ON logs_execucao(empresa_id)'); } catch(_) {}
-
-  // Migrações de colunas
-  const migracoes = [
-    { sql: 'ALTER TABLE notas_fiscais ADD COLUMN empresa_id INTEGER', msg: 'empresa_id em notas_fiscais' },
-    { sql: "ALTER TABLE empresas ADD COLUMN nome_fantasia TEXT DEFAULT ''", msg: 'nome_fantasia em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN tipo TEXT NOT NULL DEFAULT 'matriz'", msg: 'tipo em empresas' },
-    { sql: 'ALTER TABLE empresas ADD COLUMN matriz_id INTEGER', msg: 'matriz_id em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_base_url TEXT DEFAULT ''", msg: 'totvs_base_url em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_user TEXT DEFAULT ''", msg: 'totvs_user em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_password TEXT DEFAULT ''", msg: 'totvs_password em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_token TEXT DEFAULT ''", msg: 'totvs_token em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_client_id TEXT DEFAULT ''", msg: 'totvs_client_id em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_client_secret TEXT DEFAULT ''", msg: 'totvs_client_secret em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_branch TEXT DEFAULT ''", msg: 'totvs_branch em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN totvs_grant_type TEXT DEFAULT 'password'", msg: 'totvs_grant_type em empresas' },
-    { sql: 'ALTER TABLE empresas ADD COLUMN totvs_ativo INTEGER DEFAULT 0', msg: 'totvs_ativo em empresas' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_base_url TEXT DEFAULT ''", msg: 'totvs_base_url em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_user TEXT DEFAULT ''", msg: 'totvs_user em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_password TEXT DEFAULT ''", msg: 'totvs_password em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_client_id TEXT DEFAULT ''", msg: 'totvs_client_id em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_client_secret TEXT DEFAULT ''", msg: 'totvs_client_secret em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_grant_type TEXT DEFAULT 'password'", msg: 'totvs_grant_type em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN totvs_token TEXT DEFAULT ''", msg: 'totvs_token em config' },
-    // ── Domínio (Thomson Reuters) ──
-    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_status TEXT DEFAULT 'pendente'", msg: 'dominio_status em notas_fiscais' },
-    { sql: 'ALTER TABLE notas_fiscais ADD COLUMN dominio_enviado_em TEXT', msg: 'dominio_enviado_em em notas_fiscais' },
-    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_erro TEXT DEFAULT ''", msg: 'dominio_erro em notas_fiscais' },
-    { sql: "ALTER TABLE notas_fiscais ADD COLUMN dominio_batch_id TEXT DEFAULT ''", msg: 'dominio_batch_id em notas_fiscais' },
-    { sql: "ALTER TABLE empresas ADD COLUMN dominio_client_id TEXT DEFAULT ''", msg: 'dominio_client_id em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN dominio_client_secret TEXT DEFAULT ''", msg: 'dominio_client_secret em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN dominio_integration_key TEXT DEFAULT ''", msg: 'dominio_integration_key em empresas' },
-    { sql: 'ALTER TABLE empresas ADD COLUMN dominio_ativo INTEGER DEFAULT 0', msg: 'dominio_ativo em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN dominio_auth_url TEXT DEFAULT ''", msg: 'dominio_auth_url em empresas' },
-    { sql: "ALTER TABLE empresas ADD COLUMN dominio_api_url TEXT DEFAULT ''", msg: 'dominio_api_url em empresas' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_client_id TEXT DEFAULT ''", msg: 'dominio_client_id em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_client_secret TEXT DEFAULT ''", msg: 'dominio_client_secret em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_auth_url TEXT DEFAULT ''", msg: 'dominio_auth_url em config' },
-    { sql: "ALTER TABLE configuracoes ADD COLUMN dominio_api_url TEXT DEFAULT ''", msg: 'dominio_api_url em config' }
-  ];
-  migracoes.forEach(({ sql, msg }) => {
-    try { conn.run(sql); console.log('✅ Migração: ' + msg); } catch (_) {}
-  });
-
-  indexes.forEach(sql => { try { conn.run(sql); } catch (_) {} });
-
-  // ── Migrar registro legado para tabela empresas ───────────────────────
-  try {
-    const legado = queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
-    if (legado && legado.cnpj) {
-      const jaExiste = queryOne('SELECT id FROM empresas WHERE cnpj = ?', [legado.cnpj.replace(/\D/g, '')]);
-      if (!jaExiste) {
-        conn.run(`
-          INSERT INTO empresas (cnpj, razao_social, uf, ambiente, certificado_nome, certificado_senha, ultimo_nsu)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [
-          legado.cnpj.replace(/\D/g, ''), legado.razao_social || '',
-          legado.uf || 'SP', legado.ambiente || 'producao',
-          legado.certificado_nome || '', legado.certificado_senha || '',
-          legado.ultimo_nsu || '000000000000000'
-        ]);
-        console.log('✅ Empresa migrada da configuração legada:', legado.cnpj);
-      }
-    }
-  } catch (_) {}
-
-  // Manutenção automática: Corrige modelos ausentes baseando-se na chave de acesso
-  try {
-    conn.run("UPDATE notas_fiscais SET schema_type = substr(chave_acesso, 21, 2) WHERE schema_type IS NULL OR schema_type = '' OR length(schema_type) > 3");
-  } catch (e) { console.error('⚠️ Erro na manutenção de modelos:', e.message); }
-
-  // ── Seed: Criar usuário master padrão se não existir ──────────────────
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS totvs_token_expiry TEXT");
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS dominio_token TEXT");
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS dominio_token_expiry TEXT");
+    
+    await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS totvs_token_expiry TEXT");
+    await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS dominio_token TEXT");
+    await runSql("ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS dominio_token_expiry TEXT");
+  } catch (err) {
+    console.error('Erro ao migrar colunas de tokens:', err.message);
+  }
   await criarMasterSeNaoExistir();
-
-  saveDb();
-  console.log('✅ Banco de dados inicializado');
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-function queryOne(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  let result = null;
-  if (stmt.step()) result = stmt.getAsObject();
-  stmt.free();
-  return result;
-}
-
-function queryAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const results = [];
-  while (stmt.step()) results.push(stmt.getAsObject());
-  stmt.free();
-  return results;
-}
-
-function runSql(sql, params = []) {
-  db.run(sql, params);
-  saveDb();
-}
-
-// ── Configuração Legada (compatibilidade) ────────────────────────────────
-
-function getConfig() {
-  // Prioridade 1: Tabela de configurações globais
-  let config = queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
-  
-  // Se a global não tem os dados da TOTVS, tenta buscar de qualquer empresa que tenha
+async function getConfig() {
+  let config = await queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
   if (config && (!config.totvs_base_url || config.totvs_base_url === '')) {
-    const empresaComTotvs = queryOne('SELECT totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_grant_type FROM empresas WHERE totvs_base_url IS NOT NULL AND totvs_base_url != "" LIMIT 1');
-    if (empresaComTotvs) {
-      config = { ...config, ...empresaComTotvs };
-    }
+    const empresaComTotvs = await queryOne('SELECT totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_grant_type FROM empresas WHERE totvs_base_url IS NOT NULL AND totvs_base_url != \'\' LIMIT 1');
+    if (empresaComTotvs) config = { ...config, ...empresaComTotvs };
   }
-
-  // Fallback: Se não tem nada na configuracoes, retorna a primeira empresa ativa (legado)
-  if (!config) {
-    config = queryOne('SELECT * FROM empresas WHERE ativo = 1 ORDER BY id ASC LIMIT 1');
-  }
-  
+  if (!config) config = await queryOne('SELECT * FROM empresas WHERE ativo = 1 ORDER BY id ASC LIMIT 1');
   return config;
 }
 
-function saveConfig(config) {
+async function saveConfig(config) {
   const cnpj = (config.cnpj || '').replace(/\D/g, '');
-  const existing = queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj]);
+  const existing = await queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj]);
   if (existing) {
-    runSql(`
-      UPDATE empresas SET razao_social=?, uf=?, ambiente=?, certificado_nome=?,
-        certificado_senha=?, updated_at=datetime('now') WHERE cnpj=?
-    `, [
-      config.razao_social || '', config.uf || 'SP', config.ambiente || 'producao',
-      config.certificado_nome || existing.certificado_nome || '',
-      config.certificado_senha || existing.certificado_senha || '', cnpj
-    ]);
+    await runSql(`UPDATE empresas SET razao_social=?, uf=?, ambiente=?, certificado_nome=?, certificado_senha=?, updated_at=CURRENT_TIMESTAMP WHERE cnpj=?`, 
+      [config.razao_social || '', config.uf || 'SP', config.ambiente || 'producao', config.certificado_nome || existing.certificado_nome || '', config.certificado_senha || existing.certificado_senha || '', cnpj]);
   } else {
-    runSql(`
-      INSERT INTO empresas (cnpj, razao_social, uf, ambiente, certificado_nome, certificado_senha)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [cnpj, config.razao_social || '', config.uf || 'SP',
-        config.ambiente || 'producao', config.certificado_nome || '', config.certificado_senha || '']);
+    await runSql(`INSERT INTO empresas (cnpj, razao_social, uf, ambiente, certificado_nome, certificado_senha) VALUES (?, ?, ?, ?, ?, ?)`, 
+      [cnpj, config.razao_social || '', config.uf || 'SP', config.ambiente || 'producao', config.certificado_nome || '', config.certificado_senha || '']);
   }
-  return queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj]);
+  return await queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj]);
 }
 
-function saveTotvsGlobalConfig(data) {
-  let config = queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
+async function saveTotvsGlobalConfig(data) {
+  const config = await queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
   if (config) {
-    runSql(`
-      UPDATE configuracoes SET 
-        totvs_base_url=?, totvs_user=?, totvs_password=?, 
-        totvs_client_id=?, totvs_client_secret=?, totvs_grant_type=?,
-        updated_at=datetime('now')
-      WHERE id=?
-    `, [
-      data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '',
-      data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_grant_type || 'password',
-      config.id
-    ]);
+    await runSql(`UPDATE configuracoes SET totvs_base_url=?, totvs_user=?, totvs_password=?, totvs_client_id=?, totvs_client_secret=?, totvs_grant_type=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, 
+      [data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '', data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_grant_type || 'password', config.id]);
   } else {
-    runSql(`
-      INSERT INTO configuracoes (cnpj, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_grant_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      '00000000000000',
-      data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '',
-      data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_grant_type || 'password'
-    ]);
+    await runSql(`INSERT INTO configuracoes (cnpj, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_grant_type) VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+      ['00000000000000', data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '', data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_grant_type || 'password']);
   }
 }
 
-function updateUltimoNSU(nsu, empresaId = null) {
+async function updateUltimoNSU(nsu, empresaId = null) {
   if (empresaId) {
-    runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=datetime('now') WHERE id=?", [nsu, empresaId]);
+    await runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [nsu, empresaId]);
   } else {
-    const emp = getConfig();
-    if (emp) runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=datetime('now') WHERE id=?", [nsu, emp.id]);
+    const emp = await getConfig();
+    if (emp) await runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [nsu, emp.id]);
   }
 }
 
-// ── Empresas ─────────────────────────────────────────────────────────────
+async function getEmpresas() { return await queryAll('SELECT * FROM empresas ORDER BY razao_social ASC'); }
+async function getMatrizes() { return await queryAll("SELECT id, cnpj, razao_social, nome_fantasia FROM empresas WHERE tipo = 'matriz' ORDER BY razao_social ASC"); }
+async function getEmpresaById(id) { return await queryOne('SELECT * FROM empresas WHERE id = ?', [id]); }
+async function getEmpresaByCnpj(cnpj) { return await queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj.replace(/\D/g, '')]); }
 
-function getEmpresas() {
-  return queryAll('SELECT * FROM empresas ORDER BY razao_social ASC');
-}
-
-function getMatrizes() {
-  return queryAll("SELECT id, cnpj, razao_social, nome_fantasia FROM empresas WHERE tipo = 'matriz' ORDER BY razao_social ASC");
-}
-
-function getEmpresaById(id) {
-  return queryOne('SELECT * FROM empresas WHERE id = ?', [id]);
-}
-
-function getEmpresaByCnpj(cnpj) {
-  return queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj.replace(/\D/g, '')]);
-}
-
-function createEmpresa(data) {
+async function createEmpresa(data) {
   const cnpj = (data.cnpj || '').replace(/\D/g, '');
   if (!cnpj) throw new Error('CNPJ é obrigatório');
   const tipo = data.tipo === 'filial' ? 'filial' : 'matriz';
   const matrizId = tipo === 'filial' && data.matriz_id ? parseInt(data.matriz_id) : null;
-  runSql(`
+  await runSql(`
     INSERT INTO empresas (cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_nome, certificado_senha, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo, dominio_client_id, dominio_client_secret, dominio_integration_key, dominio_ativo, dominio_auth_url, dominio_api_url)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [cnpj, data.razao_social || '', data.nome_fantasia || '', tipo, matrizId,
@@ -403,22 +112,20 @@ function createEmpresa(data) {
       data.certificado_nome || '', data.certificado_senha || '',
       data.totvs_base_url || '', data.totvs_user || '', data.totvs_password || '',
       data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_branch || '',
-      data.totvs_grant_type || 'password',
-      data.totvs_ativo || 0,
-      data.dominio_client_id || '', data.dominio_client_secret || '',
-      data.dominio_integration_key || '', data.dominio_ativo || 0,
-      data.dominio_auth_url || '', data.dominio_api_url || '']);
-  return getEmpresaByCnpj(cnpj);
+      data.totvs_grant_type || 'password', (data.totvs_ativo === true || data.totvs_ativo === 'true' || data.totvs_ativo == 1) ? 1 : 0,
+      data.dominio_client_id || '', data.dominio_client_secret || '', data.dominio_integration_key || '',
+      (data.dominio_ativo === true || data.dominio_ativo === 'true' || data.dominio_ativo == 1) ? 1 : 0, data.dominio_auth_url || '', data.dominio_api_url || '']);
+  return await getEmpresaByCnpj(cnpj);
 }
 
-function updateEmpresa(id, data) {
+async function updateEmpresa(id, data) {
   const cnpj = data.cnpj ? data.cnpj.replace(/\D/g, '') : null;
-  const existing = getEmpresaById(id);
+  const existing = await getEmpresaById(id);
   if (!existing) throw new Error('Empresa não encontrada');
   const tipo = data.tipo || existing.tipo || 'matriz';
   const matrizId = tipo === 'filial' && data.matriz_id ? parseInt(data.matriz_id) : null;
 
-  runSql(`
+  await runSql(`
     UPDATE empresas SET
       cnpj = ?, razao_social = ?, nome_fantasia = ?, tipo = ?, matriz_id = ?, uf = ?, ambiente = ?,
       certificado_nome = COALESCE(NULLIF(?, ''), certificado_nome),
@@ -426,18 +133,12 @@ function updateEmpresa(id, data) {
       totvs_base_url = ?, totvs_user = ?, totvs_password = ?, totvs_token = ?, 
       totvs_client_id = ?, totvs_client_secret = ?, totvs_branch = ?, totvs_grant_type = ?, totvs_ativo = ?,
       dominio_client_id = ?, dominio_client_secret = ?, dominio_integration_key = ?, dominio_ativo = ?,
-      dominio_auth_url = ?, dominio_api_url = ?,
-      updated_at = datetime('now')
+      dominio_auth_url = ?, dominio_api_url = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
-    cnpj || existing.cnpj,
-    data.razao_social !== undefined ? data.razao_social : existing.razao_social,
-    data.nome_fantasia !== undefined ? data.nome_fantasia : existing.nome_fantasia,
-    tipo, matrizId,
-    data.uf || existing.uf,
-    data.ambiente || existing.ambiente,
-    data.certificado_nome || '',
-    data.certificado_senha || '',
+    cnpj || existing.cnpj, data.razao_social !== undefined ? data.razao_social : existing.razao_social,
+    data.nome_fantasia !== undefined ? data.nome_fantasia : existing.nome_fantasia, tipo, matrizId,
+    data.uf || existing.uf, data.ambiente || existing.ambiente, data.certificado_nome || '', data.certificado_senha || '',
     data.totvs_base_url !== undefined ? data.totvs_base_url : existing.totvs_base_url,
     data.totvs_user !== undefined ? data.totvs_user : existing.totvs_user,
     data.totvs_password !== undefined ? data.totvs_password : existing.totvs_password,
@@ -446,72 +147,46 @@ function updateEmpresa(id, data) {
     data.totvs_client_secret !== undefined ? data.totvs_client_secret : existing.totvs_client_secret,
     data.totvs_branch !== undefined ? data.totvs_branch : existing.totvs_branch,
     data.totvs_grant_type !== undefined ? data.totvs_grant_type : existing.totvs_grant_type,
-    data.totvs_ativo !== undefined ? data.totvs_ativo : existing.totvs_ativo,
+    data.totvs_ativo !== undefined ? ((data.totvs_ativo === true || data.totvs_ativo === 'true' || data.totvs_ativo == 1) ? 1 : 0) : existing.totvs_ativo,
     data.dominio_client_id !== undefined ? data.dominio_client_id : existing.dominio_client_id,
     data.dominio_client_secret !== undefined ? data.dominio_client_secret : existing.dominio_client_secret,
     data.dominio_integration_key !== undefined ? data.dominio_integration_key : existing.dominio_integration_key,
-    data.dominio_ativo !== undefined ? data.dominio_ativo : existing.dominio_ativo,
+    data.dominio_ativo !== undefined ? ((data.dominio_ativo === true || data.dominio_ativo === 'true' || data.dominio_ativo == 1) ? 1 : 0) : existing.dominio_ativo,
     data.dominio_auth_url !== undefined ? data.dominio_auth_url : existing.dominio_auth_url,
-    data.dominio_api_url !== undefined ? data.dominio_api_url : existing.dominio_api_url,
-    id
+    data.dominio_api_url !== undefined ? data.dominio_api_url : existing.dominio_api_url, id
   ]);
-  return getEmpresaById(id);
+  return await getEmpresaById(id);
 }
 
-function deleteEmpresa(id) {
-  runSql('DELETE FROM empresas WHERE id = ?', [id]);
-}
+async function deleteEmpresa(id) { await runSql('DELETE FROM empresas WHERE id = ?', [id]); }
+async function updateEmpresaNSU(id, nsu) { await runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", [nsu, id]); }
+async function updateEmpresaCertificado(id, nome, arquivo) { await runSql(`UPDATE empresas SET certificado_nome=?, certificado_arquivo=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [nome, arquivo || '', id]); }
+async function updateEmpresaSenha(id, senha) { await runSql(`UPDATE empresas SET certificado_senha=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [senha, id]); }
 
-function updateEmpresaNSU(id, nsu) {
-  runSql("UPDATE empresas SET ultimo_nsu=?, updated_at=datetime('now') WHERE id=?", [nsu, id]);
-}
-
-function updateEmpresaCertificado(id, nome, arquivo) {
-  runSql(`UPDATE empresas SET certificado_nome=?, certificado_arquivo=?, updated_at=datetime('now') WHERE id=?`,
-    [nome, arquivo || '', id]);
-}
-
-function updateEmpresaSenha(id, senha) {
-  runSql(`UPDATE empresas SET certificado_senha=?, updated_at=datetime('now') WHERE id=?`, [senha, id]);
-}
-
-// ── Notas Fiscais ─────────────────────────────────────────────────────────
-
-function insertNota(nota, empresaId = null) {
+async function insertNota(nota, empresaId = null) {
   try {
-    const conn = db; // Usa a instância global já inicializada
-    if (!conn) {
-      console.error('❌ ERRO: Banco de dados não inicializado!');
-      return false;
-    }
-
     const params = [
-      empresaId ? parseInt(empresaId) : null,
-      nota.chave_acesso || '', 
-      (nota.numero_nf || '').toString(), 
-      (nota.serie || '').toString(), 
-      nota.data_emissao || '',
-      parseFloat(nota.valor_total || 0), 
-      nota.emitente_cnpj || '', 
-      nota.emitente_nome || '',
-      nota.destinatario_cnpj || '', 
-      nota.destinatario_nome || '',
-      nota.tipo || 'entrada', 
-      nota.situacao || 'autorizada',
-      nota.nsu || null, 
-      nota.xml_completo || '', 
+      empresaId ? parseInt(empresaId) : null, nota.chave_acesso || '', (nota.numero_nf || '').toString(), 
+      (nota.serie || '').toString(), nota.data_emissao || null, parseFloat(nota.valor_total || 0), 
+      nota.emitente_cnpj || '', nota.emitente_nome || '', nota.destinatario_cnpj || '', nota.destinatario_nome || '',
+      nota.tipo || 'entrada', nota.situacao || 'autorizada', nota.nsu || null, nota.xml_completo || '', 
       nota.schema_type || (nota.chave_acesso ? nota.chave_acesso.substring(20, 22) : null)
     ];
 
-    conn.run(`
-      INSERT OR REPLACE INTO notas_fiscais
+    await runSql(`
+      INSERT INTO notas_fiscais
         (empresa_id, chave_acesso, numero_nf, serie, data_emissao, valor_total,
          emitente_cnpj, emitente_nome, destinatario_cnpj, destinatario_nome,
          tipo, situacao, nsu, xml_completo, schema_type, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT (chave_acesso) DO UPDATE SET 
+         empresa_id = EXCLUDED.empresa_id, numero_nf = EXCLUDED.numero_nf, serie = EXCLUDED.serie,
+         data_emissao = EXCLUDED.data_emissao, valor_total = EXCLUDED.valor_total,
+         emitente_cnpj = EXCLUDED.emitente_cnpj, emitente_nome = EXCLUDED.emitente_nome,
+         destinatario_cnpj = EXCLUDED.destinatario_cnpj, destinatario_nome = EXCLUDED.destinatario_nome,
+         tipo = EXCLUDED.tipo, situacao = EXCLUDED.situacao, nsu = EXCLUDED.nsu,
+         xml_completo = EXCLUDED.xml_completo, schema_type = EXCLUDED.schema_type, updated_at = CURRENT_TIMESTAMP
     `, params);
-    
-    saveDb();
     return true;
   } catch (err) {
     console.error('❌ FALHA FATAL AO INSERIR NOTA:', err);
@@ -519,393 +194,230 @@ function insertNota(nota, empresaId = null) {
   }
 }
 
-function insertNotas(notas, empresaId = null) {
+async function insertNotas(notas, empresaId = null) {
   let count = 0;
-  for (const nota of notas) {
-    if (insertNota(nota, empresaId)) count++;
-  }
+  for (const nota of notas) { if (await insertNota(nota, empresaId)) count++; }
   return count;
 }
 
-function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, pagina = 1, limite = 50 } = {}) {
+async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, pagina = 1, limite = 50 } = {}) {
   let where = [];
   let params = [];
-
-  // Limpeza de emergência: Remove notas com chaves corrompidas (notação científica)
-  try {
-    db.run("DELETE FROM notas_fiscais WHERE chave_acesso LIKE '%e+%'");
-  } catch(e) {}
-
-  if (empresaId) { where.push('empresa_id = ?'); params.push(empresaId); }
-  if (tipo && tipo !== 'todos') { where.push('tipo = ?'); params.push(tipo); }
   
-  // Filtro por Modelo (schema_type)
-  if (modelo && modelo !== 'todos') {
-    where.push('schema_type = ?');
-    params.push(modelo.toString());
-  }
+  if (empresaId) { params.push(empresaId); where.push(`empresa_id = $${params.length}`); }
+  if (tipo && tipo !== 'todos') { params.push(tipo); where.push(`tipo = $${params.length}`); }
+  if (modelo && modelo !== 'todos') { params.push(modelo.toString()); where.push(`schema_type = $${params.length}`); }
 
   if (busca) {
-    where.push(`(numero_nf LIKE ? OR chave_acesso LIKE ? OR emitente_nome LIKE ? OR emitente_cnpj LIKE ? OR destinatario_nome LIKE ? OR destinatario_cnpj LIKE ?)`);
     const like = `%${busca}%`;
-    params.push(like, like, like, like, like, like);
+    params.push(like); const idx = params.length;
+    where.push(`(numero_nf ILIKE $${idx} OR chave_acesso ILIKE $${idx} OR emitente_nome ILIKE $${idx} OR emitente_cnpj ILIKE $${idx} OR destinatario_nome ILIKE $${idx} OR destinatario_cnpj ILIKE $${idx})`);
   }
-  if (dataInicio) { where.push('data_emissao >= ?'); params.push(dataInicio); }
-  if (dataFim) { where.push('data_emissao <= ?'); params.push(dataFim + 'T23:59:59'); }
+  if (dataInicio) { params.push(dataInicio); where.push(`data_emissao >= $${params.length}`); }
+  if (dataFim) { params.push(dataFim + 'T23:59:59'); where.push(`data_emissao <= $${params.length}`); }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-  console.log(`DEBUG: Query WHERE: ${whereClause} | Params:`, params);
   const offset = (pagina - 1) * limite;
 
-  const totalRow = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${whereClause}`, params);
-  const total = totalRow ? totalRow.count : 0;
+  const countQuery = `SELECT COUNT(*) as count FROM notas_fiscais ${whereClause}`;
+  const totalRow = await pool.query({ text: countQuery, values: params });
+  const total = totalRow.rows[0] ? parseInt(totalRow.rows[0].count) : 0;
 
-  const notas = queryAll(`
+  params.push(limite); const limitIdx = params.length;
+  params.push(offset); const offsetIdx = params.length;
+  const dataQuery = `
     SELECT id, empresa_id, chave_acesso, numero_nf, serie, data_emissao, valor_total,
            emitente_cnpj, emitente_nome, destinatario_cnpj, destinatario_nome,
            tipo, situacao, nsu, schema_type, created_at,
            dominio_status, dominio_enviado_em, dominio_erro
     FROM notas_fiscais ${whereClause}
     ORDER BY data_emissao DESC, id DESC
-    LIMIT ? OFFSET ?
-  `, [...params, limite, offset]);
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+  `;
+  const notasResult = await pool.query({ text: dataQuery, values: params });
 
-  return { notas, total, pagina, limite, totalPaginas: Math.ceil(total / limite) };
+  return { notas: notasResult.rows, total, pagina, limite, totalPaginas: Math.ceil(total / limite) };
 }
 
-function getNotaById(id) {
-  return queryOne('SELECT * FROM notas_fiscais WHERE id = ?', [id]);
-}
+async function getNotaById(id) { return await queryOne('SELECT * FROM notas_fiscais WHERE id = ?', [id]); }
+async function getNotaByChave(chave) { return await queryOne('SELECT * FROM notas_fiscais WHERE chave_acesso = ?', [chave]); }
+async function deleteNota(id) { await runSql('DELETE FROM notas_fiscais WHERE id = ?', [id]); }
 
-function getNotaByChave(chave) {
-  return queryOne('SELECT * FROM notas_fiscais WHERE chave_acesso = ?', [chave]);
-}
-
-function deleteNota(id) {
-  runSql('DELETE FROM notas_fiscais WHERE id = ?', [id]);
-}
-
-function getEstatisticas(empresaId = null) {
+async function getEstatisticas(empresaId = null) {
   const filtro = empresaId ? `WHERE empresa_id = ${empresaId}` : '';
-  const total = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
-  const entradas = queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='entrada'" : "WHERE tipo='entrada'"}`);
-  const saidas = queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='saida'" : "WHERE tipo='saida'"}`);
-  const ultima = queryOne(`SELECT MAX(created_at) as data FROM notas_fiscais ${filtro}`);
+  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
+  const entradas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='entrada'" : "WHERE tipo='entrada'"}`);
+  const saidas = await queryOne(`SELECT COUNT(*) as count, COALESCE(SUM(valor_total),0) as valor FROM notas_fiscais ${filtro ? filtro + " AND tipo='saida'" : "WHERE tipo='saida'"}`);
+  const ultima = await queryOne(`SELECT MAX(created_at) as data FROM notas_fiscais ${filtro}`);
   return {
-    total: total ? total.count : 0,
-    entradas: { count: entradas ? entradas.count : 0, valor: entradas ? entradas.valor : 0 },
-    saidas: { count: saidas ? saidas.count : 0, valor: saidas ? saidas.valor : 0 },
+    total: total ? parseInt(total.count) : 0,
+    entradas: { count: entradas ? parseInt(entradas.count) : 0, valor: entradas ? entradas.valor : 0 },
+    saidas: { count: saidas ? parseInt(saidas.count) : 0, valor: saidas ? saidas.valor : 0 },
     ultimaImportacao: ultima ? ultima.data : null
   };
 }
 
-function getAllNotasForExport({ tipo, dataInicio, dataFim, empresaId, modelo } = {}) {
-  let where = [];
-  let params = [];
-  if (empresaId) { where.push('empresa_id = ?'); params.push(empresaId); }
-  if (tipo && tipo !== 'todos') { where.push('tipo = ?'); params.push(tipo); }
-  if (modelo && modelo !== 'todos') { where.push('schema_type = ?'); params.push(modelo); }
-  if (dataInicio) { where.push('data_emissao >= ?'); params.push(dataInicio); }
-  if (dataFim) { where.push('data_emissao <= ?'); params.push(dataFim + 'T23:59:59'); }
+async function getAllNotasForExport({ tipo, dataInicio, dataFim, empresaId, modelo } = {}) {
+  let where = []; let params = [];
+  if (empresaId) { params.push(empresaId); where.push(`empresa_id = $${params.length}`); }
+  if (tipo && tipo !== 'todos') { params.push(tipo); where.push(`tipo = $${params.length}`); }
+  if (modelo && modelo !== 'todos') { params.push(modelo); where.push(`schema_type = $${params.length}`); }
+  if (dataInicio) { params.push(dataInicio); where.push(`data_emissao >= $${params.length}`); }
+  if (dataFim) { params.push(dataFim + 'T23:59:59'); where.push(`data_emissao <= $${params.length}`); }
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-  return queryAll(`SELECT * FROM notas_fiscais ${whereClause} ORDER BY data_emissao DESC`, params);
+  const result = await pool.query({ text: `SELECT * FROM notas_fiscais ${whereClause} ORDER BY data_emissao DESC`, values: params });
+  return result.rows;
 }
 
-// ── Robôs SEFAZ UF ──────────────────────────────────────
-function getUfConfigs() {
-  return queryAll('SELECT * FROM robos_sefaz_uf ORDER BY uf ASC');
+async function getUfConfigs() { return await queryAll('SELECT * FROM robos_sefaz_uf ORDER BY uf ASC'); }
+
+async function saveUfConfig(uf, portal_url, ativo) {
+  const ativoInt = (ativo === true || ativo === 'true' || ativo == 1) ? 1 : 0;
+  await runSql(`
+    INSERT INTO robos_sefaz_uf (uf, portal_url, ativo, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT (uf) DO UPDATE SET portal_url=EXCLUDED.portal_url, ativo=EXCLUDED.ativo, updated_at=CURRENT_TIMESTAMP
+  `, [uf, portal_url, ativoInt]);
 }
 
-function saveUfConfig(uf, portal_url, ativo) {
-  runSql(`
-    INSERT INTO robos_sefaz_uf (uf, portal_url, ativo, updated_at) 
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(uf) DO UPDATE SET 
-      portal_url=excluded.portal_url, 
-      ativo=excluded.ativo, 
-      updated_at=CURRENT_TIMESTAMP
-  `, [uf, portal_url, ativo]);
-}
-
-// ── Domínio (Thomson Reuters) ───────────────────────────
-
-function updateDominioStatus(notaId, status, erro = null, batchId = null) {
+async function updateDominioStatus(notaId, status, erro = null, batchId = null) {
   const now = status === 'enviado' ? new Date().toISOString() : null;
-  runSql(`
-    UPDATE notas_fiscais SET
-      dominio_status = ?,
-      dominio_enviado_em = COALESCE(?, dominio_enviado_em),
-      dominio_erro = ?,
-      dominio_batch_id = COALESCE(?, dominio_batch_id),
-      updated_at = datetime('now')
-    WHERE id = ?
+  await runSql(`
+    UPDATE notas_fiscais SET dominio_status = ?, dominio_enviado_em = COALESCE(?, dominio_enviado_em), dominio_erro = ?, dominio_batch_id = COALESCE(?, dominio_batch_id), updated_at = CURRENT_TIMESTAMP WHERE id = ?
   `, [status, now, erro || '', batchId, notaId]);
 }
 
-function getNotasParaDominio(empresaId, filtros = {}) {
-  let where = ['empresa_id = ?'];
-  let params = [empresaId];
-
-  // Se não for reenvio, pega apenas pendentes
-  if (!filtros.reenviar) {
-    where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)");
-  } else {
-    where.push("(dominio_status = 'erro')");
-  }
-
-  // Filtros opcionais
-  if (filtros.dataInicio) { where.push('data_emissao >= ?'); params.push(filtros.dataInicio); }
-  if (filtros.dataFim) { where.push('data_emissao <= ?'); params.push(filtros.dataFim + 'T23:59:59'); }
-  if (filtros.tipo && filtros.tipo !== 'todos') { where.push('tipo = ?'); params.push(filtros.tipo); }
-
-  const whereClause = 'WHERE ' + where.join(' AND ');
-  return queryAll(`SELECT * FROM notas_fiscais ${whereClause} ORDER BY data_emissao DESC`, params);
+async function getNotasParaDominio(empresaId, filtros = {}) {
+  let where = ['empresa_id = $1']; let params = [empresaId];
+  if (!filtros.reenviar) { where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)"); } else { where.push("(dominio_status = 'erro')"); }
+  if (filtros.dataInicio) { params.push(filtros.dataInicio); where.push(`data_emissao >= $${params.length}`); }
+  if (filtros.dataFim) { params.push(filtros.dataFim + 'T23:59:59'); where.push(`data_emissao <= $${params.length}`); }
+  if (filtros.tipo && filtros.tipo !== 'todos') { params.push(filtros.tipo); where.push(`tipo = $${params.length}`); }
+  const result = await pool.query({ text: 'WHERE ' + where.join(' AND ') ? `SELECT * FROM notas_fiscais WHERE ${where.join(' AND ')} ORDER BY data_emissao DESC` : `SELECT * FROM notas_fiscais ORDER BY data_emissao DESC`, values: params });
+  return result.rows;
 }
 
-function getDominioStats(empresaId = null) {
+async function getDominioStats(empresaId = null) {
   const filtro = empresaId ? `WHERE empresa_id = ${empresaId}` : '';
-  const total = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
-  const enviadas = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'enviado'" : "WHERE dominio_status = 'enviado'"}`);
-  const pendentes = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND (dominio_status = 'pendente' OR dominio_status IS NULL)" : "WHERE (dominio_status = 'pendente' OR dominio_status IS NULL)"}`);
-  const erros = queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'erro'" : "WHERE dominio_status = 'erro'"}`);
-  return {
-    total: total ? total.count : 0,
-    enviadas: enviadas ? enviadas.count : 0,
-    pendentes: pendentes ? pendentes.count : 0,
-    erros: erros ? erros.count : 0
-  };
+  const total = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro}`);
+  const enviadas = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'enviado'" : "WHERE dominio_status = 'enviado'"}`);
+  const pendentes = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND (dominio_status = 'pendente' OR dominio_status IS NULL)" : "WHERE (dominio_status = 'pendente' OR dominio_status IS NULL)"}`);
+  const erros = await queryOne(`SELECT COUNT(*) as count FROM notas_fiscais ${filtro ? filtro + " AND dominio_status = 'erro'" : "WHERE dominio_status = 'erro'"}`);
+  return { total: total ? parseInt(total.count) : 0, enviadas: enviadas ? parseInt(enviadas.count) : 0, pendentes: pendentes ? parseInt(pendentes.count) : 0, erros: erros ? parseInt(erros.count) : 0 };
 }
 
-function saveDominioGlobalConfig(data) {
-  let config = queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
+async function saveDominioGlobalConfig(data) {
+  const config = await queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
   if (config) {
-    runSql(`
-      UPDATE configuracoes SET
-        dominio_client_id=?, dominio_client_secret=?,
-        dominio_auth_url=?, dominio_api_url=?,
-        updated_at=datetime('now')
-      WHERE id=?
-    `, [
-      data.dominio_client_id || '', data.dominio_client_secret || '',
-      data.dominio_auth_url || '', data.dominio_api_url || '',
-      config.id
-    ]);
+    await runSql(`UPDATE configuracoes SET dominio_client_id=?, dominio_client_secret=?, dominio_auth_url=?, dominio_api_url=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [data.dominio_client_id || '', data.dominio_client_secret || '', data.dominio_auth_url || '', data.dominio_api_url || '', config.id]);
   } else {
-    runSql(`
-      INSERT INTO configuracoes (cnpj, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url)
-      VALUES (?, ?, ?, ?, ?)
-    `, [
-      '00000000000000',
-      data.dominio_client_id || '', data.dominio_client_secret || '',
-      data.dominio_auth_url || '', data.dominio_api_url || ''
-    ]);
+    await runSql(`INSERT INTO configuracoes (cnpj, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url) VALUES (?, ?, ?, ?, ?)`, ['00000000000000', data.dominio_client_id || '', data.dominio_client_secret || '', data.dominio_auth_url || '', data.dominio_api_url || '']);
   }
 }
-
-// ── Usuários ─────────────────────────────────────────────────────────────
 
 async function criarMasterSeNaoExistir() {
   try {
-    const existe = queryOne("SELECT id FROM usuarios WHERE perfil = 'master' LIMIT 1");
+    const existe = await queryOne("SELECT id FROM usuarios WHERE perfil = 'master' LIMIT 1");
     if (existe) return;
-
     const bcrypt = require('bcryptjs');
     const senhaGerada = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-4).toUpperCase();
     const hash = await bcrypt.hash(senhaGerada, 10);
-
-    db.run(
-      `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, 'master', 1)`,
-      ['Administrador Master', 'admin@hubfiscal.local', hash]
-    );
-    saveDb();
-
-    console.log('\n' + '='.repeat(55));
+    await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, 'master', 1)`, ['Administrador Master', 'admin@hubfiscal.local', hash]);
+    console.log('\\n' + '='.repeat(55));
     console.log('🔐 USUÁRIO MASTER CRIADO — ANOTE ESTAS CREDENCIAIS:');
     console.log('   Email : admin@hubfiscal.local');
     console.log(`   Senha : ${senhaGerada}`);
     console.log('   ⚠️  Esta senha é exibida apenas uma vez!');
-    console.log('='.repeat(55) + '\n');
-  } catch (e) {
-    console.error('⚠️ Erro ao criar usuário master:', e.message);
-  }
+    console.log('='.repeat(55) + '\\n');
+  } catch (e) { console.error('⚠️ Erro ao criar usuário master:', e.message); }
 }
 
-function getUsuarios() {
-  return queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at FROM usuarios ORDER BY perfil ASC, nome ASC');
-}
-
-function getUsuarioById(id) {
-  return queryOne('SELECT * FROM usuarios WHERE id = ?', [id]);
-}
-
-function getUsuarioByEmail(email) {
-  return queryOne('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email.toLowerCase()]);
-}
-
-function createUsuario(data) {
-  db.run(
-    `INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, ?, 1)`,
-    [data.nome, data.email, data.senha_hash, data.perfil || 'viewer']
-  );
-  saveDb();
-  return queryOne('SELECT * FROM usuarios WHERE email = ?', [data.email]);
-}
-
-function updateUsuario(id, data) {
-  const u = getUsuarioById(id);
+async function getUsuarios() { return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at FROM usuarios ORDER BY perfil ASC, nome ASC'); }
+async function getUsuarioById(id) { return await queryOne('SELECT * FROM usuarios WHERE id = ?', [id]); }
+async function getUsuarioByEmail(email) { return await queryOne('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email.toLowerCase()]); }
+async function createUsuario(data) { await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, ?, 1)`, [data.nome, data.email, data.senha_hash, data.perfil || 'viewer']); return await getUsuarioByEmail(data.email); }
+async function updateUsuario(id, data) {
+  const u = await getUsuarioById(id);
   if (!u) throw new Error('Usuário não encontrado');
-  db.run(`
-    UPDATE usuarios SET
-      nome = COALESCE(?, nome),
-      email = COALESCE(?, email),
-      senha_hash = COALESCE(?, senha_hash),
-      perfil = COALESCE(?, perfil),
-      ativo = COALESCE(?, ativo),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `, [
-    data.nome || null,
-    data.email || null,
-    data.senha_hash || null,
-    data.perfil || null,
-    data.ativo !== undefined ? data.ativo : null,
-    id
-  ]);
-  saveDb();
-  return getUsuarioById(id);
+  await runSql(`UPDATE usuarios SET nome = COALESCE(?, nome), email = COALESCE(?, email), senha_hash = COALESCE(?, senha_hash), perfil = COALESCE(?, perfil), ativo = COALESCE(?, ativo), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [data.nome || null, data.email || null, data.senha_hash || null, data.perfil || null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, id]);
+  return await getUsuarioById(id);
 }
+async function deleteUsuario(id) { await runSql('DELETE FROM usuarios WHERE id = ?', [id]); }
+async function registrarLogin(usuarioId) { await runSql("UPDATE usuarios SET ultimo_login = CURRENT_TIMESTAMP WHERE id = ?", [usuarioId]); }
 
-function deleteUsuario(id) {
-  runSql('DELETE FROM usuarios WHERE id = ?', [id]);
+async function getAgendamentos() { return await queryAll(`SELECT a.*, e.razao_social as empresa_nome, e.cnpj as empresa_cnpj FROM agendamentos a LEFT JOIN empresas e ON e.id = a.empresa_id ORDER BY a.id ASC`); }
+async function getAgendamentoById(id) { return await queryOne('SELECT * FROM agendamentos WHERE id = ?', [id]); }
+async function createAgendamento(data) { 
+  const empId = parseInt(data.empresa_id) === 0 ? null : parseInt(data.empresa_id);
+  await runSql(`INSERT INTO agendamentos (empresa_id, tipo, ativo, dias_offset, cron_expressao) VALUES (?, ?, ?, ?, ?)`, 
+    [empId, data.tipo, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : 1, parseInt(data.dias_offset) || 2, data.cron_expressao || '0 6 * * *']); 
+  const rows = await queryAll('SELECT * FROM agendamentos ORDER BY id DESC LIMIT 1'); 
+  return rows[0]; 
 }
-
-function registrarLogin(usuarioId) {
-  db.run("UPDATE usuarios SET ultimo_login = datetime('now') WHERE id = ?", [usuarioId]);
-  saveDb();
-}
-
-// ── Agendamentos ──────────────────────────────────────────────────────────
-
-function getAgendamentos() {
-  return queryAll(`
-    SELECT a.*, e.razao_social as empresa_nome, e.cnpj as empresa_cnpj
-    FROM agendamentos a
-    LEFT JOIN empresas e ON e.id = a.empresa_id
-    ORDER BY a.id ASC
-  `);
-}
-
-function getAgendamentoById(id) {
-  return queryOne('SELECT * FROM agendamentos WHERE id = ?', [id]);
-}
-
-function createAgendamento(data) {
-  db.run(
-    `INSERT INTO agendamentos (empresa_id, tipo, ativo, dias_offset, cron_expressao)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      parseInt(data.empresa_id),
-      data.tipo,
-      data.ativo !== undefined ? (data.ativo ? 1 : 0) : 1,
-      parseInt(data.dias_offset) || 2,
-      data.cron_expressao || '0 6 * * *'
-    ]
-  );
-  saveDb();
-  const rows = queryAll('SELECT * FROM agendamentos ORDER BY id DESC LIMIT 1');
-  return rows[0];
-}
-
-function updateAgendamento(id, data) {
-  const ag = getAgendamentoById(id);
+async function updateAgendamento(id, data) {
+  const ag = await getAgendamentoById(id);
   if (!ag) throw new Error('Agendamento não encontrado');
-  db.run(`
-    UPDATE agendamentos SET
-      ativo = COALESCE(?, ativo),
-      dias_offset = COALESCE(?, dias_offset),
-      cron_expressao = COALESCE(?, cron_expressao),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `, [
-    data.ativo !== undefined ? (data.ativo ? 1 : 0) : null,
-    data.dias_offset !== undefined ? parseInt(data.dias_offset) : null,
-    data.cron_expressao || null,
-    id
-  ]);
-  saveDb();
-  return getAgendamentoById(id);
+  const empId = data.empresa_id !== undefined ? (parseInt(data.empresa_id) === 0 ? null : parseInt(data.empresa_id)) : ag.empresa_id;
+  await runSql(`UPDATE agendamentos SET empresa_id = COALESCE(?, empresa_id), ativo = COALESCE(?, ativo), dias_offset = COALESCE(?, dias_offset), cron_expressao = COALESCE(?, cron_expressao), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
+    [empId, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, data.dias_offset !== undefined ? parseInt(data.dias_offset) : null, data.cron_expressao || null, id]);
+  return await getAgendamentoById(id);
+}
+async function updateAgendamentoStatus(id, status, resultado) { await runSql(`UPDATE agendamentos SET ultimo_run = CURRENT_TIMESTAMP, ultimo_status = ?, ultimo_resultado = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [status, resultado || null, id]); }
+async function deleteAgendamento(id) { 
+  await runSql('DELETE FROM logs_execucao WHERE agendamento_id = ?', [id]);
+  await runSql('DELETE FROM agendamentos WHERE id = ?', [id]); 
 }
 
-function updateAgendamentoStatus(id, status, resultado) {
-  db.run(`
-    UPDATE agendamentos SET
-      ultimo_run = datetime('now'),
-      ultimo_status = ?,
-      ultimo_resultado = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `, [status, resultado || null, id]);
-  saveDb();
+async function registrarLogExecucao(data) { 
+  const res = await pool.query({
+    text: `INSERT INTO logs_execucao (agendamento_id, empresa_id, tipo, status, notas_encontradas, notas_inseridas, notas_enviadas, detalhes, duracao_ms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    values: [data.agendamento_id || null, data.empresa_id || null, data.tipo, data.status, data.notas_encontradas || 0, data.notas_inseridas || 0, data.notas_enviadas || 0, data.detalhes || null, data.duracao_ms || 0]
+  });
+  return res.rows[0].id;
 }
-
-function deleteAgendamento(id) {
-  runSql('DELETE FROM agendamentos WHERE id = ?', [id]);
+async function updateLogExecucao(id, data) {
+  await runSql(`UPDATE logs_execucao SET status = COALESCE(?, status), notas_encontradas = COALESCE(?, notas_encontradas), notas_inseridas = COALESCE(?, notas_inseridas), notas_enviadas = COALESCE(?, notas_enviadas), detalhes = COALESCE(?, detalhes), duracao_ms = COALESCE(?, duracao_ms) WHERE id = ?`, 
+    [data.status !== undefined ? data.status : null, data.notas_encontradas !== undefined ? data.notas_encontradas : null, data.notas_inseridas !== undefined ? data.notas_inseridas : null, data.notas_enviadas !== undefined ? data.notas_enviadas : null, data.detalhes !== undefined ? data.detalhes : null, data.duracao_ms !== undefined ? data.duracao_ms : null, id]);
 }
-
-// ── Logs de Execução ──────────────────────────────────────────────────────
-
-function registrarLogExecucao(data) {
-  db.run(`
-    INSERT INTO logs_execucao
-      (agendamento_id, empresa_id, tipo, status, notas_encontradas, notas_inseridas, notas_enviadas, detalhes, duracao_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    data.agendamento_id || null,
-    data.empresa_id || null,
-    data.tipo,
-    data.status,
-    data.notas_encontradas || 0,
-    data.notas_inseridas || 0,
-    data.notas_enviadas || 0,
-    data.detalhes || null,
-    data.duracao_ms || 0
-  ]);
-  saveDb();
-}
-
-function getLogsExecucao({ agendamento_id, empresa_id, limite } = {}) {
-  let where = [];
-  let params = [];
-  if (agendamento_id) { where.push('l.agendamento_id = ?'); params.push(agendamento_id); }
-  if (empresa_id) { where.push('l.empresa_id = ?'); params.push(empresa_id); }
+async function getLogsExecucao({ agendamento_id, empresa_id, limite, tipo, status } = {}) {
+  let where = []; let params = [];
+  if (agendamento_id) { params.push(agendamento_id); where.push(`l.agendamento_id = $${params.length}`); }
+  if (empresa_id) { params.push(empresa_id); where.push(`l.empresa_id = $${params.length}`); }
+  if (tipo) { params.push(tipo); where.push(`l.tipo = $${params.length}`); }
+  if (status) { params.push(status); where.push(`l.status = $${params.length}`); }
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
   params.push(parseInt(limite) || 50);
-  return queryAll(`
-    SELECT l.*, e.razao_social as empresa_nome
-    FROM logs_execucao l
-    LEFT JOIN empresas e ON e.id = l.empresa_id
-    ${whereClause}
-    ORDER BY l.executado_em DESC
-    LIMIT ?
-  `, params);
+  return await pool.query({ text: `SELECT l.*, e.razao_social as empresa_nome FROM logs_execucao l LEFT JOIN empresas e ON e.id = l.empresa_id ${whereClause} ORDER BY l.executado_em DESC LIMIT $${params.length}`, values: params }).then(r => r.rows);
+}
+
+async function updateEmpresaTokens(id, data) {
+  let fields = [];
+  let values = [];
+  if (data.totvs_token !== undefined) { fields.push('totvs_token = ?'); values.push(data.totvs_token); }
+  if (data.totvs_token_expiry !== undefined) { fields.push('totvs_token_expiry = ?'); values.push(data.totvs_token_expiry); }
+  if (data.dominio_token !== undefined) { fields.push('dominio_token = ?'); values.push(data.dominio_token); }
+  if (data.dominio_token_expiry !== undefined) { fields.push('dominio_token_expiry = ?'); values.push(data.dominio_token_expiry); }
+  
+  if (fields.length === 0) return;
+  values.push(id);
+  await runSql(`UPDATE empresas SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
+}
+
+async function updateGlobalTokens(data) {
+  const config = await queryOne('SELECT * FROM configuracoes ORDER BY id DESC LIMIT 1');
+  if (!config) return;
+  
+  let fields = [];
+  let values = [];
+  if (data.totvs_token !== undefined) { fields.push('totvs_token = ?'); values.push(data.totvs_token); }
+  if (data.totvs_token_expiry !== undefined) { fields.push('totvs_token_expiry = ?'); values.push(data.totvs_token_expiry); }
+  if (data.dominio_token !== undefined) { fields.push('dominio_token = ?'); values.push(data.dominio_token); }
+  if (data.dominio_token_expiry !== undefined) { fields.push('dominio_token_expiry = ?'); values.push(data.dominio_token_expiry); }
+  
+  if (fields.length === 0) return;
+  values.push(config.id);
+  await runSql(`UPDATE configuracoes SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
 }
 
 module.exports = {
-  initialize, getDb,
-  getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU,
-  getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj,
-  createEmpresa, updateEmpresa, deleteEmpresa,
-  updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha,
-  insertNota, insertNotas, getNotas, getNotaById, getNotaByChave,
-  deleteNota, getEstatisticas, getAllNotasForExport,
-  getUfConfigs, saveUfConfig,
-  updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig,
-  // Auth / Usuários
-  getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin,
-  // Agendamentos
-  getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento,
-  // Logs
-  registrarLogExecucao, getLogsExecucao,
-  runSql, saveDb
+  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
 };
-

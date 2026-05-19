@@ -16,50 +16,104 @@ class TotvsService {
     console.log(line.trim());
   }
 
-  async extrair(empresaId, mesReferencia) {
+  async extrair(empresaId, dataReferencia) {
     if (fs.existsSync(this.logPath)) fs.unlinkSync(this.logPath);
     
-    const empresa = this.db.getEmpresaById(empresaId);
-    if (!empresa) throw new Error('Empresa não encontrada');
+    let empresas = [];
+    let isGlobal = false;
+    let config = {};
 
-    const globalConfig = this.db.getConfig() || {};
-    let config = { ...empresa };
-
-    // Regra simples: Se a empresa não tem URL própria, usa TUDO do global (exceto o que for específico da empresa)
-    if (!config.totvs_base_url || config.totvs_base_url.trim() === '') {
-      config.totvs_base_url = globalConfig.totvs_base_url;
-      config.totvs_user = globalConfig.totvs_user;
-      config.totvs_password = globalConfig.totvs_password;
-      config.totvs_client_id = globalConfig.totvs_client_id;
-      config.totvs_client_secret = globalConfig.totvs_client_secret;
-      config.totvs_grant_type = globalConfig.totvs_grant_type;
+    if (empresaId === null || empresaId === 0 || empresaId === '0') {
+      isGlobal = true;
+      const todas = await this.db.getEmpresas();
+      empresas = todas.filter(e => e.totvs_ativo === true || e.totvs_ativo === 'true' || e.totvs_ativo == 1);
+      if (empresas.length === 0) throw new Error('Nenhuma empresa ativa para sincronização TOTVS.');
       
-      // IMPORTANTE: Mantemos o totvs_branch da EMPRESA, pois cada filial tem o seu
-      config.totvs_branch = empresa.totvs_branch; 
+      const globalConfig = await this.db.getConfig() || {};
+      config = { ...globalConfig };
+      // Se a global não tiver configurada, tenta usar as credenciais da primeira empresa ativa
+      if (!config.totvs_base_url || config.totvs_base_url.trim() === '') {
+        config = { ...empresas[0] };
+      }
+    } else {
+      const empresa = await this.db.getEmpresaById(empresaId);
+      if (!empresa) throw new Error('Empresa não encontrada');
+      empresas = [empresa];
+      const globalConfig = await this.db.getConfig() || {};
+      config = { ...empresa };
+      if (!config.totvs_base_url || config.totvs_base_url.trim() === '') {
+        config.totvs_base_url = globalConfig.totvs_base_url;
+        config.totvs_user = globalConfig.totvs_user;
+        config.totvs_password = globalConfig.totvs_password;
+        config.totvs_client_id = globalConfig.totvs_client_id;
+        config.totvs_client_secret = globalConfig.totvs_client_secret;
+        config.totvs_grant_type = globalConfig.totvs_grant_type;
+        config.totvs_branch = empresa.totvs_branch; 
+      }
     }
 
-    const client = new TotvsClient(config);
-    const [ano, mes] = mesReferencia.split('-');
-    const ultimoDia = new Date(ano, mes, 0).getDate();
-    const startDate = `${mesReferencia}-01T00:00:00.000Z`;
-    const endDate = `${mesReferencia}-${ultimoDia}T23:59:59.999Z`;
+    config.onTokenUpdated = async (token, expiry) => {
+      if (!isGlobal && empresaId) {
+        await this.db.updateEmpresaTokens(empresaId, {
+          totvs_token: token,
+          totvs_token_expiry: expiry
+        });
+        const empresa = await this.db.getEmpresaById(empresaId);
+        const globalConfig = await this.db.getConfig() || {};
+        if (globalConfig.id && (!empresa.totvs_client_id || empresa.totvs_client_id.trim() === '')) {
+          await this.db.updateGlobalTokens({
+            totvs_token: token,
+            totvs_token_expiry: expiry
+          });
+        }
+      } else if (isGlobal) {
+        const globalConfig = await this.db.getConfig() || {};
+        if (globalConfig.id) {
+          await this.db.updateGlobalTokens({
+            totvs_token: token,
+            totvs_token_expiry: expiry
+          });
+        }
+      }
+    };
 
-    this.writeLog(`🚀 Iniciando para ${empresa.razao_social} (${mesReferencia})`);
+    const client = new TotvsClient(config);
+    let startDate, endDate;
+    if (dataReferencia.length === 10) {
+      // É um dia específico (YYYY-MM-DD)
+      startDate = `${dataReferencia}T00:00:00.000Z`;
+      endDate = `${dataReferencia}T23:59:59.999Z`;
+    } else {
+      // É um mês inteiro (YYYY-MM)
+      const [ano, mes] = dataReferencia.split('-');
+      const ultimoDia = new Date(ano, mes, 0).getDate();
+      startDate = `${dataReferencia}-01T00:00:00.000Z`;
+      endDate = `${dataReferencia}-${ultimoDia}T23:59:59.999Z`;
+    }
+
+    const labelLog = isGlobal ? 'TODAS AS EMPRESAS ATIVAS' : empresas[0].razao_social;
+    this.writeLog(`🚀 Iniciando para ${labelLog} (${dataReferencia})`);
 
     try {
       await client.obterToken();
-      const searchResult = await client.buscarInvoices({ personCpfCnpjList: [empresa.cnpj], startDate, endDate });
+      const cnpjs = empresas.map(e => e.cnpj);
+      const searchResult = await client.buscarInvoices({ personCpfCnpjList: cnpjs, startDate, endDate });
       const invoices = searchResult.data || [];
       
       this.writeLog(`✅ TOTVS retornou ${invoices.length} registros.`);
 
       if (invoices.length > 0) {
-        // LOG COMPLETO para não termos mais dúvidas
         this.writeLog(`🔍 Estrutura COMPLETA da 1ª nota: ${JSON.stringify(invoices[0])}`);
       }
 
+      // Mapeamento rápido de CNPJ limpo para empresa correspondente
+      const empMap = {};
+      empresas.forEach(e => {
+        empMap[e.cnpj.replace(/\D/g, '')] = e;
+      });
+
       let salvos = 0, pulados = 0, erros = 0, ignorados = 0;
-      let relatorioLog = `Relatório de Extração TOTVS\nData: ${new Date().toLocaleString()}\nEmpresa: ${empresa.razao_social} (ID: ${empresa.id})\nMês Referência: ${mesReferencia}\n\n`;
+      let relatorioLog = `Relatório de Extração TOTVS\nData: ${new Date().toLocaleString()}\nPeríodo Referência: ${dataReferencia}\n\n`;
       let logSemChave = "--- NOTAS SEM CHAVE VÁLIDA NA TOTVS (Não importadas) ---\n";
       let logJaExistentes = "\n--- NOTAS IGNORADAS (Já existiam no banco de dados) ---\n";
 
@@ -83,7 +137,7 @@ class TotvsService {
         }
 
         try {
-          const existente = this.db.getNotaByChave(chave);
+          const existente = await this.db.getNotaByChave(chave);
           if (existente) {
             this.writeLog(`⏩ Nota ${chave.substring(0,10)}... já existe no banco. Pulando.`);
             pulados++;
@@ -95,8 +149,10 @@ class TotvsService {
           const xmlContent = await client.exportarXml(chave);
           
           if (xmlContent) {
-            let parsed = xmlParser.parseNFeXml(xmlContent, empresa.cnpj);
-            if (!parsed) parsed = xmlParser.parseResNFe(xmlContent, empresa.cnpj);
+            // Tenta usar a CNPJ da primeira empresa do map como fallback pro interpretador de XML
+            const firstEmpCnpj = empresas[0].cnpj;
+            let parsed = xmlParser.parseNFeXml(xmlContent, firstEmpCnpj);
+            if (!parsed) parsed = xmlParser.parseResNFe(xmlContent, firstEmpCnpj);
 
             if (parsed) {
               parsed.xml_completo = xmlContent;
@@ -106,8 +162,13 @@ class TotvsService {
                 parsed.data_emissao = parsed.data_emissao.split('T')[0];
               }
 
-              this.writeLog(`💾 Salvando Nota ${parsed.numero_nf} para Empresa ID: ${empresa.id}`);
-              this.db.insertNota(parsed, empresa.id);
+              // Associa a nota à empresa correta pelo CNPJ emitente ou destinatário
+              const cnpjEmit = (parsed.emitente_cnpj || '').replace(/\D/g, '');
+              const cnpjDest = (parsed.destinatario_cnpj || '').replace(/\D/g, '');
+              const empAlvo = empMap[cnpjEmit] || empMap[cnpjDest] || empresas[0];
+
+              this.writeLog(`💾 Salvando Nota ${parsed.numero_nf} para Empresa: ${empAlvo.razao_social} (ID: ${empAlvo.id})`);
+              await this.db.insertNota(parsed, empAlvo.id);
               salvos++;
             } else {
               this.writeLog(`❌ Erro interpretar XML: ${chave}`);

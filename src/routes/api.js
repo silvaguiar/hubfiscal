@@ -11,42 +11,42 @@ module.exports = function (db, upload) {
 
   // ── Estatísticas ─────────────────────────────────────
 
-  router.get('/estatisticas', (req, res) => {
+  router.get('/estatisticas', async (req, res) => {
     try {
       const { empresaId } = req.query;
-      const stats = db.getEstatisticas(empresaId ? parseInt(empresaId) : null);
+      const stats = await db.getEstatisticas(empresaId ? parseInt(empresaId) : null);
       res.json(stats);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Configuração Legada (compatibilidade) ─────────────
 
-  router.get('/config', (req, res) => {
+  router.get('/config', async (req, res) => {
     try {
-      const config = db.getConfig();
+      const config = await db.getConfig();
       if (config && config.certificado_senha) config.certificado_senha = '••••••';
       res.json(config || {});
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/config', (req, res) => {
+  router.post('/config', async (req, res) => {
     try {
       const configData = req.body;
       if (!configData.cnpj) return res.status(400).json({ error: 'CNPJ é obrigatório' });
-      const config = db.saveConfig(configData);
+      const config = await db.saveConfig(configData);
       config.certificado_senha = config.certificado_senha ? '••••••' : '';
       res.json({ success: true, config });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/config/totvs', (req, res) => {
+  router.post('/config/totvs', async (req, res) => {
     try {
-      db.saveTotvsGlobalConfig(req.body);
+      await db.saveTotvsGlobalConfig(req.body);
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.get('/totvs/chaves-invalidas/download', (req, res) => {
+  router.get('/totvs/chaves-invalidas/download', async (req, res) => {
     try {
       const filePath = path.join(__dirname, '..', '..', 'data', 'totvs_invalidas.txt');
       if (fs.existsSync(filePath)) {
@@ -59,34 +59,34 @@ module.exports = function (db, upload) {
 
   // ── Matrizes (para seleção em filiais) ──────────────
 
-  router.get('/matrizes', (req, res) => {
+  router.get('/matrizes', async (req, res) => {
     try {
-      const matrizes = db.getMatrizes();
+      const matrizes = await db.getMatrizes();
       res.json(matrizes);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Empresas (multi-CNPJ) ─────────────────────────────
 
-  router.get('/empresas', (req, res) => {
+  router.get('/empresas', async (req, res) => {
     try {
-      const empresas = db.getEmpresas();
+      const empresas = await db.getEmpresas();
       // Mask passwords
       empresas.forEach(e => { if (e.certificado_senha) e.certificado_senha = '••••••'; });
       res.json(empresas);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.get('/empresas/:id', (req, res) => {
+  router.get('/empresas/:id', async (req, res) => {
     try {
-      const empresa = db.getEmpresaById(parseInt(req.params.id));
+      const empresa = await db.getEmpresaById(parseInt(req.params.id));
       if (!empresa) return res.status(404).json({ error: 'Empresa não encontrada' });
       empresa.certificado_senha = empresa.certificado_senha ? '••••••' : '';
       res.json(empresa);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/empresas', (req, res) => {
+  router.post('/empresas', async (req, res) => {
     try {
       const { 
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
@@ -94,7 +94,7 @@ module.exports = function (db, upload) {
         dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       } = req.body;
       if (!cnpj) return res.status(400).json({ error: 'CNPJ é obrigatório' });
-      const empresa = db.createEmpresa({ 
+      const empresa = await db.createEmpresa({ 
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
         dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
@@ -107,14 +107,14 @@ module.exports = function (db, upload) {
     }
   });
 
-  router.put('/empresas/:id', (req, res) => {
+  router.put('/empresas/:id', async (req, res) => {
     try {
       const { 
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
         dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
       } = req.body;
-      const empresa = db.updateEmpresa(parseInt(req.params.id), {
+      const empresa = await db.updateEmpresa(parseInt(req.params.id), {
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
         dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
@@ -124,65 +124,55 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/empresas/:id', (req, res) => {
+  router.delete('/empresas/:id', async (req, res) => {
     try {
-      db.deleteEmpresa(parseInt(req.params.id));
+      await db.deleteEmpresa(parseInt(req.params.id));
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // Upload certificado por empresa
-  router.post('/empresas/:id/certificado', upload.single('certificado'), (req, res) => {
+  router.post('/empresas/:id/certificado', upload.single('certificado'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const empresa = db.getEmpresaById(id);
+      const empresa = await db.getEmpresaById(id);
       if (!empresa) return res.status(404).json({ error: 'Empresa não encontrada' });
       if (!req.file) return res.status(400).json({ error: 'Arquivo .pfx não enviado' });
 
-      // Salvar certificado com nome específico da empresa
-      const certDir = path.join(__dirname, '..', '..', 'uploads');
-      if (!fs.existsSync(certDir)) fs.mkdirSync(certDir, { recursive: true });
-
-      const certFileName = `certificado_${empresa.cnpj}.pfx`;
-      const certPath = path.join(certDir, certFileName);
-
-      // req.file já foi salvo pelo multer como 'certificado.pfx', mover para nome específico
-      const tmpPath = path.join(certDir, req.file.filename || 'certificado.pfx');
-      fs.renameSync(tmpPath, certPath);
-
-      db.updateEmpresaCertificado(id, req.file.originalname, certFileName);
-      res.json({ success: true, filename: req.file.originalname, message: 'Certificado salvo com sucesso' });
+      const base64 = req.file.buffer.toString('base64');
+      await db.updateEmpresaCertificado(id, req.file.originalname, base64);
+      res.json({ success: true, filename: req.file.originalname, message: 'Certificado salvo no banco de dados' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // Atualizar senha do certificado
-  router.post('/empresas/:id/senha', (req, res) => {
+  router.post('/empresas/:id/senha', async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { senha } = req.body;
       if (!senha) return res.status(400).json({ error: 'Senha não informada' });
-      db.updateEmpresaSenha(id, senha);
+      await db.updateEmpresaSenha(id, senha);
       res.json({ success: true, message: 'Senha atualizada' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Upload de Certificado (legado) ─────────────────────
 
-  router.post('/config/certificado', upload.single('certificado'), (req, res) => {
+  router.post('/config/certificado', upload.single('certificado'), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'Arquivo .pfx não enviado' });
-      const config = db.getConfig();
-      if (config) db.saveConfig({ ...config, certificado_nome: req.file.originalname });
+      const config = await db.getConfig();
+      if (config) await db.saveConfig({ ...config, certificado_nome: req.file.originalname });
       res.json({ success: true, filename: req.file.originalname, message: 'Certificado salvo com sucesso' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Notas Fiscais ─────────────────────────────────────
 
-  router.get('/notas', (req, res) => {
+  router.get('/notas', async (req, res) => {
     try {
       const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo } = req.query;
-      const result = db.getNotas({
+      const result = await db.getNotas({
         tipo, busca, modelo, dataInicio, dataFim,
         empresaId: empresaId ? parseInt(empresaId) : null,
         pagina: parseInt(pagina) || 1,
@@ -192,17 +182,17 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.get('/notas/:id', (req, res) => {
+  router.get('/notas/:id', async (req, res) => {
     try {
-      const nota = db.getNotaById(parseInt(req.params.id));
+      const nota = await db.getNotaById(parseInt(req.params.id));
       if (!nota) return res.status(404).json({ error: 'Nota não encontrada' });
       res.json(nota);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.get('/notas/:id/xml', (req, res) => {
+  router.get('/notas/:id/xml', async (req, res) => {
     try {
-      const nota = db.getNotaById(parseInt(req.params.id));
+      const nota = await db.getNotaById(parseInt(req.params.id));
       if (!nota) return res.status(404).json({ error: 'Nota não encontrada' });
       res.set('Content-Type', 'application/xml');
       res.set('Content-Disposition', `attachment; filename="NFe_${nota.chave_acesso}.xml"`);
@@ -210,16 +200,16 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/notas/:id', (req, res) => {
+  router.delete('/notas/:id', async (req, res) => {
     try {
-      db.deleteNota(parseInt(req.params.id));
+      await db.deleteNota(parseInt(req.params.id));
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Importação Manual de XML ──────────────────────────
 
-  router.post('/importar-xml', (req, res) => {
+  router.post('/importar-xml', async (req, res) => {
     try {
       const { xml_content, empresa_id } = req.body;
       if (!xml_content) return res.status(400).json({ error: 'Conteúdo XML não fornecido' });
@@ -227,19 +217,19 @@ module.exports = function (db, upload) {
       const xmlParser = require('../sefaz/xml-parser');
       const info = xmlParser.getChaveAcessoFromXml(xml_content);
       if (info && info.chave) {
-        const existente = db.getNotaByChave(info.chave);
+        const existente = await db.getNotaByChave(info.chave);
         if (existente) {
           return res.json({ success: true, message: 'Nota já existente no banco. Pulada.', pulada: true });
         }
       }
 
-      const empresa = empresa_id ? db.getEmpresaById(parseInt(empresa_id)) : db.getConfig();
+      const empresa = empresa_id ? await db.getEmpresaById(parseInt(empresa_id)) : await db.getConfig();
       const cnpj = empresa ? empresa.cnpj : '';
       const parsed = xmlParser.parseNFeXml(xml_content, cnpj);
       if (!parsed) return res.status(400).json({ error: 'Não foi possível interpretar o XML' });
       
       parsed.xml_completo = xml_content;
-      const success = db.insertNota(parsed, empresa ? empresa.id : null);
+      const success = await db.insertNota(parsed, empresa ? empresa.id : null);
       
       if (success) {
         res.json({ success: true, nota: parsed, message: 'NF-e importada com sucesso' });
@@ -252,24 +242,20 @@ module.exports = function (db, upload) {
   // ── Sincronização SEFAZ ──────────────────────────────
 
   // Diagnóstico
-  router.get('/sefaz/status', (req, res) => {
+  router.get('/sefaz/status', async (req, res) => {
     try {
       const { empresaId } = req.query;
-      const empresa = empresaId ? db.getEmpresaById(parseInt(empresaId)) : db.getConfig();
+      const empresa = empresaId ? await db.getEmpresaById(parseInt(empresaId)) : await db.getConfig();
       if (!empresa) return res.json({ configurado: false });
-
-      const certFile = empresa.certificado_arquivo || 'certificado.pfx';
-      const certPath = path.join(__dirname, '..', '..', 'uploads', certFile);
-      const certExiste = fs.existsSync(certPath);
 
       res.json({
         configurado: !!empresa.cnpj,
         cnpj: empresa.cnpj, uf: empresa.uf, ambiente: empresa.ambiente,
         ultimoNSU: empresa.ultimo_nsu,
         certificado: {
-          existe: certExiste,
+          existe: !!empresa.certificado_arquivo,
           nome: empresa.certificado_nome,
-          tamanhoBytes: certExiste ? fs.statSync(certPath).size : 0,
+          tamanhoBytes: empresa.certificado_arquivo ? Buffer.from(empresa.certificado_arquivo, 'base64').length : 0,
           senhaConfigurada: !!empresa.certificado_senha
         }
       });
@@ -277,14 +263,14 @@ module.exports = function (db, upload) {
   });
 
   // Reset NSU
-  router.post('/sefaz/reset-nsu', (req, res) => {
+  router.post('/sefaz/reset-nsu', async (req, res) => {
     try {
       const { nsu, empresa_id } = req.body;
       const nsuFormatado = String(nsu || '0').replace(/\D/g, '').padStart(15, '0');
       if (empresa_id) {
-        db.updateEmpresaNSU(parseInt(empresa_id), nsuFormatado);
+        await db.updateEmpresaNSU(parseInt(empresa_id), nsuFormatado);
       } else {
-        db.updateUltimoNSU(nsuFormatado);
+        await db.updateUltimoNSU(nsuFormatado);
       }
       res.json({ success: true, ultimoNSU: nsuFormatado });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -294,19 +280,19 @@ module.exports = function (db, upload) {
   router.post('/sefaz/sincronizar', async (req, res) => {
     try {
       const { empresa_id } = req.body;
-      const empresa = empresa_id ? db.getEmpresaById(parseInt(empresa_id)) : db.getConfig();
+      const empresa = empresa_id ? await db.getEmpresaById(parseInt(empresa_id)) : await db.getConfig();
 
       if (!empresa || !empresa.cnpj) {
         return res.status(400).json({ error: 'Configure o CNPJ antes de sincronizar' });
       }
 
       // ── Resolver certificado (filial usa cert da matriz) ──
-      const resolveCert = (emp) => {
+      const resolveCert = async (emp) => {
         if (emp.tipo === 'filial' && emp.matriz_id) {
-          const matriz = db.getEmpresaById(emp.matriz_id);
+          const matriz = await db.getEmpresaById(emp.matriz_id);
           if (matriz) {
             return {
-              certFile: matriz.certificado_arquivo || `certificado_${matriz.cnpj}.pfx`,
+              certBase64: matriz.certificado_arquivo,
               certSenha: matriz.certificado_senha,
               certNome: matriz.certificado_nome,
               via: `Matriz: ${matriz.razao_social || matriz.cnpj}`
@@ -314,17 +300,16 @@ module.exports = function (db, upload) {
           }
         }
         return {
-          certFile: emp.certificado_arquivo || 'certificado.pfx',
+          certBase64: emp.certificado_arquivo,
           certSenha: emp.certificado_senha,
           certNome: emp.certificado_nome,
           via: 'Próprio'
         };
       };
 
-      const cert = resolveCert(empresa);
-      const certPath = path.join(__dirname, '..', '..', 'uploads', cert.certFile);
+      const cert = await resolveCert(empresa);
 
-      if (!fs.existsSync(certPath)) {
+      if (!cert.certBase64) {
         const msg = empresa.tipo === 'filial' && empresa.matriz_id
           ? `Certificado da matriz não encontrado. Verifique se a matriz possui um .pfx carregado.`
           : `Certificado digital não encontrado. Faça o upload do arquivo .pfx`;
@@ -341,7 +326,7 @@ module.exports = function (db, upload) {
         cnpj: empresa.cnpj,
         uf: empresa.uf,
         ambiente: empresa.ambiente,
-        certificadoPath: certPath,
+        certificadoBase64: cert.certBase64,
         certificadoSenha: cert.certSenha
       });
       console.log(`🔐 Cert via: ${cert.via} | Consultando CNPJ: ${empresa.cnpj}`);
@@ -350,11 +335,11 @@ module.exports = function (db, upload) {
 
       let savedCount = 0;
       if (result.documentos.length > 0) {
-        savedCount = db.insertNotas(result.documentos, empresa.id);
+        savedCount = await db.insertNotas(result.documentos, empresa.id);
       }
 
       if (result.ultimoNSU && result.ultimoNSU !== '000000000000000') {
-        db.updateEmpresaNSU(empresa.id, result.ultimoNSU);
+        await db.updateEmpresaNSU(empresa.id, result.ultimoNSU);
       }
 
       let message = 'Sincronização concluída';
@@ -379,14 +364,11 @@ module.exports = function (db, upload) {
   // Sincronizar TODAS as empresas
   router.post('/sefaz/sincronizar-todas', async (req, res) => {
     try {
-      const empresas = db.getEmpresas();
+      const empresas = await db.getEmpresas();
       const resultados = [];
 
       for (const empresa of empresas) {
-        const certFile = empresa.certificado_arquivo || 'certificado.pfx';
-        const certPath = path.join(__dirname, '..', '..', 'uploads', certFile);
-
-        if (!fs.existsSync(certPath) || !empresa.certificado_senha) {
+        if (!empresa.certificado_arquivo || !empresa.certificado_senha) {
           resultados.push({ empresa: empresa.razao_social || empresa.cnpj, status: 'sem_certificado' });
           continue;
         }
@@ -394,13 +376,13 @@ module.exports = function (db, upload) {
         try {
           const client = new SefazClient({
             cnpj: empresa.cnpj, uf: empresa.uf, ambiente: empresa.ambiente,
-            certificadoPath: certPath, certificadoSenha: empresa.certificado_senha
+            certificadoBase64: empresa.certificado_arquivo, certificadoSenha: empresa.certificado_senha
           });
 
           const result = await client.sincronizarTudo(empresa.ultimo_nsu);
-          const savedCount = result.documentos.length > 0 ? db.insertNotas(result.documentos, empresa.id) : 0;
+          const savedCount = result.documentos.length > 0 ? await db.insertNotas(result.documentos, empresa.id) : 0;
           if (result.ultimoNSU && result.ultimoNSU !== '000000000000000') {
-            db.updateEmpresaNSU(empresa.id, result.ultimoNSU);
+            await db.updateEmpresaNSU(empresa.id, result.ultimoNSU);
           }
           resultados.push({ empresa: empresa.razao_social || empresa.cnpj, cnpj: empresa.cnpj, salvos: savedCount, nsu: result.ultimoNSU });
         } catch (e) {
@@ -421,22 +403,20 @@ module.exports = function (db, upload) {
     try {
       const { chave, empresa_id } = req.body;
       if (!chave || chave.length !== 44) return res.status(400).json({ error: 'Chave de acesso inválida (deve ter 44 dígitos)' });
-      const empresa = empresa_id ? db.getEmpresaById(parseInt(empresa_id)) : db.getConfig();
+      const empresa = empresa_id ? await db.getEmpresaById(parseInt(empresa_id)) : await db.getConfig();
       if (!empresa) return res.status(400).json({ error: 'Configure o CNPJ primeiro' });
 
-      const certFile = empresa.certificado_arquivo || 'certificado.pfx';
-      const certPath = path.join(__dirname, '..', '..', 'uploads', certFile);
-      if (!fs.existsSync(certPath)) return res.status(400).json({ error: 'Certificado digital não encontrado' });
+      if (!empresa.certificado_arquivo) return res.status(400).json({ error: 'Certificado digital não encontrado' });
 
       const client = new SefazClient({
         cnpj: empresa.cnpj, uf: empresa.uf, ambiente: empresa.ambiente,
-        certificadoPath: certPath, certificadoSenha: empresa.certificado_senha
+        certificadoBase64: empresa.certificado_arquivo, certificadoSenha: empresa.certificado_senha
       });
 
       const result = await client.consultarChaveNFe(chave);
       if (result.chave_acesso) {
         result.xml_completo = result.xml_completo || '';
-        db.insertNota(result, empresa.id);
+        await db.insertNota(result, empresa.id);
         res.json({ success: true, nota: result });
       } else {
         res.json({ success: false, status: result.status, motivo: result.motivo });
@@ -451,7 +431,7 @@ module.exports = function (db, upload) {
   router.post('/upload-saidas/:empresaId', upload.single('file'), async (req, res) => {
     try {
       const empresaId = req.params.empresaId;
-      const empresa = db.getEmpresaById(empresaId);
+      const empresa = await db.getEmpresaById(empresaId);
       
       if (!empresa) return res.status(404).json({ error: 'Empresa não encontrada' });
       if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo .zip enviado' });
@@ -489,7 +469,7 @@ module.exports = function (db, upload) {
       }
 
       if (documentos.length > 0) {
-        notasSalvas = db.insertNotas(documentos, empresa.id);
+        notasSalvas = await db.insertNotas(documentos, empresa.id);
       }
 
       console.log(`✅ Extração concluída. ${xmlsEncontrados} XMLs lidos. ${notasSalvas} notas salvas/atualizadas.`);
@@ -512,7 +492,7 @@ module.exports = function (db, upload) {
 
 
   // ── Integração TOTVS ──────────────────────────────────
-  router.get('/totvs/logs', (req, res) => {
+  router.get('/totvs/logs', async (req, res) => {
     try {
       const fs = require('fs');
       const logPath = path.join(__dirname, '..', '..', 'totvs_sync.log');
@@ -548,10 +528,10 @@ module.exports = function (db, upload) {
   // ── Integração Domínio (Thomson Reuters) ──────────────
 
   // Estatísticas Domínio
-  router.get('/dominio/stats', (req, res) => {
+  router.get('/dominio/stats', async (req, res) => {
     try {
       const { empresaId } = req.query;
-      const stats = db.getDominioStats(empresaId ? parseInt(empresaId) : null);
+      const stats = await db.getDominioStats(empresaId ? parseInt(empresaId) : null);
       res.json(stats);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -594,16 +574,16 @@ module.exports = function (db, upload) {
   router.post('/dominio/enviar-nota/:notaId', async (req, res) => {
     try {
       const notaId = parseInt(req.params.notaId);
-      const nota = db.getNotaById(notaId);
+      const nota = await db.getNotaById(notaId);
       if (!nota) return res.status(404).json({ error: 'Nota não encontrada' });
       if (!nota.xml_completo) return res.status(400).json({ error: 'Nota sem XML disponível' });
 
-      const empresa = nota.empresa_id ? db.getEmpresaById(nota.empresa_id) : null;
+      const empresa = nota.empresa_id ? await db.getEmpresaById(nota.empresa_id) : null;
       if (!empresa || !empresa.dominio_ativo) {
         return res.status(400).json({ error: 'Integração Domínio não ativa para esta empresa' });
       }
 
-      const globalConfig = db.getConfig() || {};
+      const globalConfig = await db.getConfig() || {};
       const DominioClient = require('../integracoes/dominio');
       const client = new DominioClient({
         dominio_client_id: empresa.dominio_client_id || globalConfig.dominio_client_id || '',
@@ -613,7 +593,7 @@ module.exports = function (db, upload) {
         dominio_api_url: empresa.dominio_api_url || globalConfig.dominio_api_url || ''
       });
 
-      db.updateDominioStatus(notaId, 'enviando');
+      await db.updateDominioStatus(notaId, 'enviando');
       const result = await client.enviarXml(nota.xml_completo, {
         chave: nota.chave_acesso,
         tipo: nota.tipo,
@@ -621,10 +601,10 @@ module.exports = function (db, upload) {
       });
 
       if (result.success) {
-        db.updateDominioStatus(notaId, 'enviado', null, result.batchId);
+        await db.updateDominioStatus(notaId, 'enviado', null, result.batchId);
         res.json({ success: true, message: 'Nota enviada ao Domínio com sucesso!' });
       } else {
-        db.updateDominioStatus(notaId, 'erro', result.error);
+        await db.updateDominioStatus(notaId, 'erro', result.error);
         res.json({ success: false, error: result.error });
       }
     } catch (err) {
@@ -633,7 +613,7 @@ module.exports = function (db, upload) {
   });
 
   // Logs Domínio
-  router.get('/dominio/logs', (req, res) => {
+  router.get('/dominio/logs', async (req, res) => {
     try {
       const logPath = path.join(__dirname, '..', '..', 'dominio_sync.log');
       if (fs.existsSync(logPath)) {
@@ -645,20 +625,20 @@ module.exports = function (db, upload) {
   });
 
   // Salvar config global Domínio
-  router.post('/config/dominio', (req, res) => {
+  router.post('/config/dominio', async (req, res) => {
     try {
-      db.saveDominioGlobalConfig(req.body);
+      await db.saveDominioGlobalConfig(req.body);
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Exportação ───────────────────────────────────────
 
-  router.get('/exportar/:formato', (req, res) => {
+  router.get('/exportar/:formato', async (req, res) => {
     try {
       const { formato } = req.params;
       const { tipo, dataInicio, dataFim, empresaId, modelo } = req.query;
-      const notas = db.getAllNotasForExport({ tipo, dataInicio, dataFim, empresaId: empresaId ? parseInt(empresaId) : null, modelo });
+      const notas = await db.getAllNotasForExport({ tipo, dataInicio, dataFim, empresaId: empresaId ? parseInt(empresaId) : null, modelo });
 
       if (notas.length === 0) return res.status(404).json({ error: 'Nenhuma nota encontrada para exportar' });
 

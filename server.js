@@ -20,11 +20,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multer config for certificate upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
-  filename: (req, file, cb) => cb(null, 'certificado.pfx')
-});
+// Multer config for memory storage (Vercel serverless / Supabase migration)
+const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
@@ -53,6 +50,15 @@ const Scheduler = require('./src/scheduler/scheduler');
 
   // ── Middleware de Auth para todas as demais rotas /api ──────────
   const { requireAuth } = require('./src/auth/middleware');
+  
+  // Desativa cache para todas as requisições na API (resolve problema do F5)
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
+  
   app.use('/api', requireAuth);
 
   // ── API Routes (protegidas) ─────────────────────────────────────
@@ -80,7 +86,11 @@ const Scheduler = require('./src/scheduler/scheduler');
   process.on('SIGTERM', () => { scheduler.parar(); process.exit(0); });
   process.on('SIGINT',  () => { scheduler.parar(); process.exit(0); });
 
-  app.listen(PORT, () => {
-    console.log(`\n🟢 HubFiscal rodando em http://localhost:${PORT}\n`);
-  });
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    app.listen(PORT, () => {
+      console.log(`\n🟢 HubFiscal rodando em http://localhost:${PORT}\n`);
+    });
+  }
 })();
+
+module.exports = app;

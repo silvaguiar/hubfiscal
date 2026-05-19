@@ -14,7 +14,7 @@ module.exports = function (db) {
       const { email, senha } = req.body;
       if (!email || !senha) return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
 
-      const usuario = db.getUsuarioByEmail(email.toLowerCase().trim());
+      const usuario = await db.getUsuarioByEmail(email.toLowerCase().trim());
       if (!usuario || !usuario.ativo) {
         return res.status(401).json({ error: 'Credenciais inválidas.' });
       }
@@ -30,7 +30,7 @@ module.exports = function (db) {
       };
 
       const token = gerarToken(payload);
-      db.registrarLogin(usuario.id);
+      await db.registrarLogin(usuario.id);
 
       // Cookie httpOnly seguro
       res.cookie('hubfiscal_token', token, {
@@ -51,14 +51,14 @@ module.exports = function (db) {
   });
 
   // POST /api/auth/logout
-  router.post('/logout', (req, res) => {
+  router.post('/logout', async (req, res) => {
     res.clearCookie('hubfiscal_token');
     res.json({ success: true });
   });
 
   // GET /api/auth/me — retorna usuário atual
-  router.get('/me', requireAuth, (req, res) => {
-    const usuario = db.getUsuarioById(req.usuario.id);
+  router.get('/me', requireAuth, async (req, res) => {
+    const usuario = await db.getUsuarioById(req.usuario.id);
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
     res.json({
       id: usuario.id,

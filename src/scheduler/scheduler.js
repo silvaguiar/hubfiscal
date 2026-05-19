@@ -17,13 +17,13 @@ class Scheduler {
    */
   async inicializar() {
     console.log('⏰ Iniciando motor de agendamento...');
-    this.recarregar();
+    await this.recarregar();
   }
 
   /**
    * Para todos os jobs e recarrega do banco
    */
-  recarregar() {
+  async recarregar() {
     // Para jobs existentes
     for (const [id, task] of this.jobs) {
       task.stop();
@@ -31,7 +31,8 @@ class Scheduler {
     this.jobs.clear();
 
     // Recarrega agendamentos ativos
-    const agendamentos = this.db.getAgendamentos().filter(a => a.ativo);
+    const agendamentosAll = await this.db.getAgendamentos();
+    const agendamentos = agendamentosAll.filter(a => a.ativo);
     
     for (const ag of agendamentos) {
       this._registrarJob(ag);
@@ -55,7 +56,7 @@ class Scheduler {
       console.log(`⏰ [SCHEDULER] Disparando job ${agendamento.tipo} (empresa_id: ${agendamento.empresa_id})`);
       try {
         // Recarrega o agendamento do banco antes de executar (pode ter sido atualizado)
-        const ag = this.db.getAgendamentoById(agendamento.id);
+        const ag = await this.db.getAgendamentoById(agendamento.id);
         if (!ag || !ag.ativo) return;
         await this.executarAgora(ag);
       } catch (err) {
@@ -74,7 +75,7 @@ class Scheduler {
    * Executa um job imediatamente (uso manual ou automático)
    */
   async executarAgora(agendamento) {
-    this.db.updateAgendamentoStatus(agendamento.id, 'executando', null);
+    await this.db.updateAgendamentoStatus(agendamento.id, 'executando', null);
     
     if (agendamento.tipo === 'totvs_sync') {
       return executarTotvsJob(this.db, agendamento);

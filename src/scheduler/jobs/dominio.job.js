@@ -6,52 +6,91 @@ const DominioService = require('../../integracoes/dominio-service');
 
 async function executarDominioJob(db, agendamento) {
   const inicio = Date.now();
+  let logId = null;
 
   try {
-    const empresa = db.getEmpresaById(agendamento.empresa_id);
-    if (!empresa || !empresa.dominio_ativo) {
-      throw new Error('Empresa não encontrada ou integração Domínio não está ativa.');
-    }
-
-    console.log(`[SCHEDULER][DOMÍNIO] Empresa ${empresa.razao_social || empresa.cnpj} — Enviando pendentes...`);
-
-    const service = new DominioService(db);
-    // enviar(empresaId, filtros) — filtros vazios = busca todas as pendentes
-    const result = await service.enviar(agendamento.empresa_id, {});
-
-    const notas_enviadas = result.enviadas || 0;
-    const detalhes = JSON.stringify(result);
-
-    db.updateAgendamentoStatus(agendamento.id, 'sucesso', detalhes);
-    db.registrarLogExecucao({
+    logId = await db.registrarLogExecucao({
       agendamento_id: agendamento.id,
       empresa_id: agendamento.empresa_id,
       tipo: 'dominio_envio',
-      status: 'sucesso',
-      notas_encontradas: result.total || 0,
-      notas_inseridas: 0,
-      notas_enviadas,
-      detalhes,
-      duracao_ms: Date.now() - inicio
-    });
-
-    console.log(`[SCHEDULER][DOMÍNIO] ✅ Concluído: ${notas_enviadas} nota(s) enviada(s).`);
-    return { notas_enviadas };
-
-  } catch (err) {
-    console.error(`[SCHEDULER][DOMÍNIO] ❌ Erro:`, err.message);
-    db.updateAgendamentoStatus(agendamento.id, 'erro', err.message);
-    db.registrarLogExecucao({
-      agendamento_id: agendamento.id,
-      empresa_id: agendamento.empresa_id,
-      tipo: 'dominio_envio',
-      status: 'erro',
+      status: 'executando',
       notas_encontradas: 0,
       notas_inseridas: 0,
       notas_enviadas: 0,
-      detalhes: err.message,
+      detalhes: 'Iniciando envio...',
+      duracao_ms: 0
+    });
+    
+    await db.updateAgendamentoStatus(agendamento.id, 'executando', 'Iniciando...');
+ 
+    let empresas = [];
+    let isGlobal = false;
+    let label = 'Todas as Empresas Ativas';
+
+    if (agendamento.empresa_id) {
+      const empresa = await db.getEmpresaById(agendamento.empresa_id);
+      if (!empresa || (!empresa.dominio_ativo && empresa.dominio_ativo !== 1 && empresa.dominio_ativo !== '1')) {
+        throw new Error('Empresa não encontrada ou integração Domínio não está ativa.');
+      }
+      empresas = [empresa];
+      label = empresa.razao_social || empresa.cnpj;
+    } else {
+      isGlobal = true;
+      const todas = await db.getEmpresas();
+      empresas = todas.filter(e => e.dominio_ativo === true || e.dominio_ativo === 'true' || e.dominio_ativo == 1);
+      if (empresas.length === 0) throw new Error('Nenhuma empresa ativa com integração Domínio cadastrada.');
+    }
+ 
+    console.log(`[SCHEDULER][DOMÍNIO] ${label} — Enviando pendentes...`);
+ 
+    const service = new DominioService(db);
+    let totalEnviadas = 0;
+    let totalErros = 0;
+    let totalGeral = 0;
+    let resultadosLote = [];
+
+    for (const emp of empresas) {
+      console.log(`[SCHEDULER][DOMÍNIO] Iniciando lote para: ${emp.razao_social}`);
+      try {
+        const result = await service.enviar(emp.id, {});
+        totalEnviadas += result.enviadas || 0;
+        totalErros += result.erros || 0;
+        totalGeral += result.total || 0;
+        resultadosLote.push({ empresa: emp.razao_social, success: true, ...result });
+      } catch (err) {
+        console.error(`[SCHEDULER][DOMÍNIO] Falha no envio da empresa ${emp.razao_social}:`, err.message);
+        resultadosLote.push({ empresa: emp.razao_social, success: false, error: err.message });
+      }
+    }
+ 
+    const detalhes = JSON.stringify({ total: totalGeral, enviadas: totalEnviadas, erros: totalErros, lote: resultadosLote });
+ 
+    await db.updateAgendamentoStatus(agendamento.id, 'sucesso', detalhes);
+    await db.updateLogExecucao(logId, {
+      status: 'sucesso',
+      notas_encontradas: totalGeral,
+      notas_inseridas: 0,
+      notas_enviadas: totalEnviadas,
+      detalhes,
       duracao_ms: Date.now() - inicio
     });
+ 
+    console.log(`[SCHEDULER][DOMÍNIO] ✅ Concluído Lote: ${totalEnviadas} nota(s) enviada(s).`);
+    return { notas_enviadas: totalEnviadas };
+
+  } catch (err) {
+    console.error(`[SCHEDULER][DOMÍNIO] ❌ Erro:`, err.message);
+    await db.updateAgendamentoStatus(agendamento.id, 'erro', err.message);
+    if (logId) {
+      await db.updateLogExecucao(logId, {
+        status: 'erro',
+        notas_encontradas: 0,
+        notas_inseridas: 0,
+        notas_enviadas: 0,
+        detalhes: err.message,
+        duracao_ms: Date.now() - inicio
+      });
+    }
     throw err;
   }
 }

@@ -549,7 +549,7 @@ const app = {
   },
 
   updateEmpresaFilters(empresas) {
-    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'manualEmpresaHub', 'exportEmpresa', 'dominioEmpresa'];
+    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'manualEmpresaHub', 'exportEmpresa', 'dominioEmpresa', 'filterLogEmpresa'];
     filters.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -1055,7 +1055,8 @@ const app = {
       const sel = document.getElementById('modalAgEmpresa');
       if (sel) {
         const emp = await (await fetch('/api/empresas', { credentials: 'include' })).json();
-        sel.innerHTML = emp.map(e => `<option value="${e.id}">${e.nome_fantasia || e.razao_social || e.cnpj}</option>`).join('');
+        sel.innerHTML = '<option value="0" style="font-weight:bold;color:var(--primary)">🌐 TODAS AS EMPRESAS ATIVAS</option>' + 
+                        emp.map(e => `<option value="${e.id}">${e.nome_fantasia || e.razao_social || e.cnpj}</option>`).join('');
       }
 
       if (!lista.length) {
@@ -1074,7 +1075,7 @@ const app = {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
             <div>
               <div style="font-size:15px;font-weight:600;color:var(--text)">${tipoLabel[ag.tipo] || ag.tipo}</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ag.empresa_nome || ag.empresa_cnpj || 'Empresa'}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${ag.empresa_id === null ? '🌐 <strong>Todas as Empresas</strong>' : (ag.empresa_nome || ag.empresa_cnpj || 'Empresa')}</div>
             </div>
             <div style="display:flex;gap:6px">
               <button onclick="app.executarAgendamentoAgora(${ag.id})" title="Executar Agora"
@@ -1109,7 +1110,15 @@ const app = {
 
   async carregarLogsAgendamentos() {
     try {
-      const res  = await fetch('/api/agendamentos/logs?limite=30', { credentials: 'include' });
+      let url = '/api/agendamentos/logs?limite=30';
+      const elEmp = document.getElementById('filterLogEmpresa');
+      const elTipo = document.getElementById('filterLogTipo');
+      const elStatus = document.getElementById('filterLogStatus');
+      if (elEmp && elEmp.value) url += '&empresa_id=' + elEmp.value;
+      if (elTipo && elTipo.value) url += '&tipo=' + elTipo.value;
+      if (elStatus && elStatus.value) url += '&status=' + elStatus.value;
+      
+      const res  = await fetch(url, { credentials: 'include' });
       const logs = await res.json();
       const tbody = document.getElementById('logsAgendamentosBody');
       if (!tbody) return;
@@ -1122,9 +1131,10 @@ const app = {
       tbody.innerHTML = logs.map(l => {
         const s = statusMap[l.status] || { icon: '?', color: '#64748b' };
         const dur = l.duracao_ms ? (l.duracao_ms < 1000 ? l.duracao_ms + 'ms' : (l.duracao_ms / 1000).toFixed(1) + 's') : '—';
+        const empNome = l.empresa_id === null ? '🌐 Todas as Empresas' : this.truncate(l.empresa_nome, 22);
         return `<tr>
           <td style="font-size:12px">${this.formatDate(l.executado_em)}</td>
-          <td>${this.truncate(l.empresa_nome, 22)}</td>
+          <td>${empNome}</td>
           <td>${tipoMap[l.tipo] || l.tipo}</td>
           <td><span style="color:${s.color};font-weight:600">${s.icon} ${l.status}</span></td>
           <td style="text-align:center">${l.notas_encontradas || 0}</td>
@@ -1139,9 +1149,6 @@ const app = {
   abrirModalAgendamento(id = null) {
     document.getElementById('modalAgId').value = id || '';
     document.getElementById('modalAgendamentoTitulo').textContent = id ? 'Editar Agendamento' : 'Novo Agendamento';
-    document.getElementById('modalAgHorario').addEventListener('change', (e) => {
-      document.getElementById('modalAgCronCustomGroup').style.display = e.target.value === 'custom' ? 'block' : 'none';
-    });
     document.getElementById('modalAgTipo').addEventListener('change', (e) => {
       document.getElementById('modalAgOffsetGroup').style.display = e.target.value === 'totvs_sync' ? 'block' : 'none';
     });
@@ -1157,10 +1164,15 @@ const app = {
     const empresa_id   = document.getElementById('modalAgEmpresa').value;
     const tipo         = document.getElementById('modalAgTipo').value;
     const dias_offset  = document.getElementById('modalAgOffset').value;
-    const horarioSel   = document.getElementById('modalAgHorario').value;
-    const cronCustom   = document.getElementById('modalAgCron').value;
+    const horarioSel   = document.getElementById('modalAgHorario').value; // Ex: "06:00"
     const ativo        = document.getElementById('modalAgAtivo').checked;
-    const cron_expressao = horarioSel === 'custom' ? cronCustom : horarioSel;
+    
+    // Converte o valor "HH:MM" para cron "MM HH * * *"
+    let cron_expressao = '0 6 * * *';
+    if (horarioSel) {
+      const [hh, mm] = horarioSel.split(':');
+      cron_expressao = `${parseInt(mm, 10)} ${parseInt(hh, 10)} * * *`;
+    }
 
     if (!empresa_id) return this.toast('Selecione uma empresa', 'error');
     if (!cron_expressao) return this.toast('Defina o horário de execução', 'error');
@@ -1187,10 +1199,14 @@ const app = {
   async excluirAgendamento(id) {
     if (!confirm('Excluir este agendamento?')) return;
     try {
-      await fetch(`/api/agendamentos/${id}`, { method: 'DELETE', credentials: 'include' });
+      const res = await fetch(`/api/agendamentos/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erro desconhecido ao excluir');
+      }
       this.toast('Agendamento removido', 'success');
       this.carregarAgendamentos();
-    } catch (err) { this.toast('Erro ao excluir', 'error'); }
+    } catch (err) { this.toast(err.message || 'Erro ao excluir', 'error'); }
   },
 
   async executarAgendamentoAgora(id) {
@@ -1199,7 +1215,13 @@ const app = {
       const res = await fetch(`/api/agendamentos/${id}/executar`, { method: 'POST', credentials: 'include' });
       const data = await res.json();
       this.toast(data.message || 'Job iniciado!', 'info');
-      setTimeout(() => this.carregarAgendamentos(), 3000);
+      // Atualizar logs e agendamentos imediatamente para mostrar 'executando'
+      this.carregarAgendamentos();
+      setTimeout(() => this.carregarLogsAgendamentos(), 500); // 500ms para dar tempo do registro ser salvo no banco
+      
+      // Auto-atualizar após 10 e 20 segundos para ver se terminou
+      setTimeout(() => { this.carregarAgendamentos(); this.carregarLogsAgendamentos(); }, 10000);
+      setTimeout(() => { this.carregarAgendamentos(); this.carregarLogsAgendamentos(); }, 20000);
     } catch (err) { this.toast('Erro ao executar job', 'error'); }
   },
 

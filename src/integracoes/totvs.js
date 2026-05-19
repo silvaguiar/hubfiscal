@@ -1,6 +1,9 @@
 const axios = require('axios');
 const qs = require('qs');
 
+// Cache global de token TOTVS em memória
+const totvsTokenCache = {};
+
 class TotvsClient {
   constructor(config) {
     let baseUrl = config.totvs_base_url || '';
@@ -14,11 +17,47 @@ class TotvsClient {
     this.clientSecret = config.totvs_client_secret;
     this.branch = config.totvs_branch;
     this.grantType = config.totvs_grant_type || 'password';
-    this.accessToken = config.totvs_token;
+    // Inicializa o cache com os valores do banco se ainda não existir
+    if (!totvsTokenCache[this.clientId]) {
+      totvsTokenCache[this.clientId] = {
+        token: config.totvs_token || null,
+        expiry: config.totvs_token_expiry ? parseInt(config.totvs_token_expiry) : null
+      };
+    } else {
+      if (config.totvs_token && (!totvsTokenCache[this.clientId].expiry || parseInt(config.totvs_token_expiry) > totvsTokenCache[this.clientId].expiry)) {
+        totvsTokenCache[this.clientId].token = config.totvs_token;
+        totvsTokenCache[this.clientId].expiry = parseInt(config.totvs_token_expiry);
+      }
+    }
+    this.onTokenUpdated = config.onTokenUpdated || null;
+  }
+
+  get accessToken() {
+    return totvsTokenCache[this.clientId] ? totvsTokenCache[this.clientId].token : null;
+  }
+
+  set accessToken(val) {
+    if (!totvsTokenCache[this.clientId]) totvsTokenCache[this.clientId] = {};
+    totvsTokenCache[this.clientId].token = val;
+  }
+
+  get tokenExpiry() {
+    return totvsTokenCache[this.clientId] ? totvsTokenCache[this.clientId].expiry : null;
+  }
+
+  set tokenExpiry(val) {
+    if (!totvsTokenCache[this.clientId]) totvsTokenCache[this.clientId] = {};
+    totvsTokenCache[this.clientId].expiry = val;
   }
 
   async obterToken() {
     if (!this.baseUrl) throw new Error('Base URL TOTVS não configurada.');
+
+    // Se o token existe e não expirou, reutiliza para evitar requisições de autenticação redundantes
+    if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      return this.accessToken;
+    }
+
     const url = `${this.baseUrl}/api/totvsmoda/authorization/v2/token`;
     
     const payload = {
@@ -39,6 +78,17 @@ class TotvsClient {
 
       if (response.data && response.data.access_token) {
         this.accessToken = response.data.access_token;
+        
+        // TOTVS Moda token expira em 24h, usamos 23h como margem de segurança (82800s)
+        const expiresIn = response.data.expires_in || 82800;
+        this.tokenExpiry = Date.now() + (expiresIn - 60) * 1000;
+
+        if (this.onTokenUpdated) {
+          this.onTokenUpdated(this.accessToken, String(this.tokenExpiry)).catch(err => {
+            console.error('Erro ao persistir token da TOTVS:', err.message);
+          });
+        }
+
         return this.accessToken;
       }
       throw new Error('Resposta da TOTVS não contém access_token');
