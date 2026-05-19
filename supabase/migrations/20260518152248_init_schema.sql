@@ -142,3 +142,13 @@ CREATE TABLE logs_execucao (
 
 CREATE INDEX idx_logs_agendamento ON logs_execucao(agendamento_id);
 CREATE INDEX idx_logs_empresa ON logs_execucao(empresa_id);
+
+-- Habilitar Row Level Security (RLS) para proteger acessos anônimos públicos à API do Supabase (REST API)
+ALTER TABLE public.configuracoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.empresas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notas_fiscais ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.robos_sefaz_uf ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agendamentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.logs_execucao ENABLE ROW LEVEL SECURITY;
+
