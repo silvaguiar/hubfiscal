@@ -71,6 +71,15 @@ async function executarDominioJob(db, agendamento) {
         console.error(`[SCHEDULER][DOMÍNIO] Falha no envio da empresa ${emp.razao_social}:`, err.message);
         resultadosLote.push({ empresa: emp.razao_social, success: false, error: err.message });
       }
+      // Persiste os totais parciais após cada empresa — garante que um restart
+      // não zerará as contagens já registradas
+      if (logId) {
+        await db.updateLogExecucao(logId, {
+          notas_encontradas: totalGeral,
+          notas_enviadas: totalEnviadas,
+          detalhes: JSON.stringify({ total: totalGeral, enviadas: totalEnviadas, erros: totalErros, lote: resultadosLote })
+        }).catch(() => {});
+      }
     }
  
     const detalhes = JSON.stringify({ total: totalGeral, enviadas: totalEnviadas, erros: totalErros, lote: resultadosLote });
