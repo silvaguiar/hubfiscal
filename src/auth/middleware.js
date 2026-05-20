@@ -28,7 +28,7 @@ function requirePerfil(...perfisPermitidos) {
   return (req, res, next) => {
     if (!req.usuario) return res.status(401).json({ error: 'Não autenticado.' });
     const nivel = hierarquia[req.usuario.perfil] || 0;
-    const minNivel = Math.max(...perfisPermitidos.map(p => hierarquia[p] || 0));
+    const minNivel = Math.min(...perfisPermitidos.map(p => hierarquia[p] || 0));
     if (nivel < minNivel) {
       return res.status(403).json({ error: 'Permissão insuficiente para esta operação.' });
     }
