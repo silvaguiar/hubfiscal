@@ -140,13 +140,13 @@ const app = {
     try {
       const res = await fetch('/api/estatisticas');
       const stats = await res.json();
-      document.getElementById('statTotal').textContent = stats.total;
-      document.getElementById('statEntradas').textContent = stats.entradas.count;
       document.getElementById('statEntradasValor').textContent = this.formatCurrency(stats.entradas.valor);
-      document.getElementById('statSaidas').textContent = stats.saidas.count;
-      document.getElementById('statSaidasValor').textContent = this.formatCurrency(stats.saidas.valor);
+      document.getElementById('statSaidasValor').textContent   = this.formatCurrency(stats.saidas.valor);
       document.getElementById('statSync').textContent = stats.ultimaImportacao
         ? this.formatDate(stats.ultimaImportacao) : '—';
+      this.countUp(document.getElementById('statTotal'),    stats.total);
+      this.countUp(document.getElementById('statEntradas'), stats.entradas.count);
+      this.countUp(document.getElementById('statSaidas'),   stats.saidas.count);
 
       const [notasRes, domRes] = await Promise.all([
         fetch('/api/notas?limite=10'),
@@ -156,10 +156,26 @@ const app = {
       this.renderDashboardTable(notasData.notas);
 
       const domStats = await domRes.json();
-      const elIntegradas = document.getElementById('statDomIntegradas');
-      const elPendentes  = document.getElementById('statDomPendentes');
-      if (elIntegradas) elIntegradas.textContent = domStats.enviadas ?? 0;
-      if (elPendentes)  elPendentes.textContent  = domStats.pendentes ?? 0;
+      this.countUp(document.getElementById('statDomIntegradas'), domStats.enviadas ?? 0);
+      this.countUp(document.getElementById('statDomPendentes'),  domStats.pendentes ?? 0);
+
+      // Progress bar integração Domínio
+      const total    = domStats.total || 0;
+      const enviadas = domStats.enviadas || 0;
+      const erros    = domStats.erros || 0;
+      const pct      = total > 0 ? Math.round((enviadas / total) * 100) : 0;
+      const fill = document.getElementById('domProgressFill');
+      if (fill) setTimeout(() => { fill.style.width = pct + '%'; }, 150);
+      const pctEl = document.getElementById('domProgressPct');
+      if (pctEl) pctEl.textContent = `${enviadas.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} — ${pct}%`;
+      const labelEl = document.getElementById('domProgressLabel');
+      if (labelEl) labelEl.textContent = pct === 100
+        ? '✅ Todas as notas integradas ao Domínio'
+        : `${(total - enviadas).toLocaleString('pt-BR')} nota(s) aguardando integração`;
+      const errosEl = document.getElementById('domProgressErros');
+      if (errosEl) errosEl.textContent = erros > 0 ? `⚠️ ${erros.toLocaleString('pt-BR')} com erro` : '';
+
+      this.renderDominioChart(domStats);
     } catch (err) { console.error(err); }
   },
 
@@ -1022,6 +1038,55 @@ const app = {
   },
 
   // ── Helpers ───────────────────────────────────────
+  countUp(el, target, duration = 1100) {
+    if (!el || isNaN(target)) return;
+    const start = Date.now();
+    const tick = () => {
+      const p = Math.min((Date.now() - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased).toLocaleString('pt-BR');
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  },
+
+  renderDominioChart(stats) {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById('dominioChart');
+    if (!canvas) return;
+    if (this._dominioChart) { this._dominioChart.destroy(); this._dominioChart = null; }
+    const ctx = canvas.getContext('2d');
+    this._dominioChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Integradas', 'Pendentes', 'Erros'],
+        datasets: [{
+          data: [stats.enviadas || 0, stats.pendentes || 0, stats.erros || 0],
+          backgroundColor: ['rgba(16,185,129,.85)', 'rgba(245,158,11,.85)', 'rgba(239,68,68,.85)'],
+          borderColor: ['#10b981', '#f59e0b', '#ef4444'],
+          borderWidth: 2,
+          hoverOffset: 8
+        }]
+      },
+      options: {
+        responsive: false,
+        cutout: '70%',
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#94a3b8', font: { size: 12, family: 'Inter' }, padding: 14, boxWidth: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.label}: ${ctx.parsed.toLocaleString('pt-BR')}`
+            }
+          }
+        }
+      }
+    });
+  },
+
   formatCurrency(val) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
   },

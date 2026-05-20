@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     /* ── Empresa Cards ─────────────────────────────── */
     .empresas-header {
@@ -282,17 +283,44 @@
           </div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header"><h3>Últimas Notas</h3></div>
-        <div class="table-wrap">
-          <table id="dashboardTable">
-            <thead>
-              <tr>
-                <th>Nº NF</th><th>Data</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th>
-              </tr>
-            </thead>
-            <tbody id="dashboardTableBody"></tbody>
-          </table>
+      <!-- Barra de progresso de integração Domínio -->
+      <div class="card" style="margin-bottom:20px;padding:18px 22px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="material-icons-round" style="color:#10b981;font-size:20px">cloud_done</span>
+            <span style="font-size:14px;font-weight:600;color:var(--text-primary)">Integração Domínio</span>
+          </div>
+          <span id="domProgressPct" style="font-size:13px;font-weight:700;color:#10b981;letter-spacing:.3px">—</span>
+        </div>
+        <div style="height:10px;background:rgba(255,255,255,.05);border-radius:99px;overflow:hidden">
+          <div id="domProgressFill" style="height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,#059669,#10b981,#34d399);transition:width 1.4s cubic-bezier(.4,0,.2,1);box-shadow:0 0 12px rgba(16,185,129,.4)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--text-muted)">
+          <span id="domProgressLabel">Carregando...</span>
+          <span id="domProgressErros"></span>
+        </div>
+      </div>
+
+      <!-- Gráfico + Tabela -->
+      <div class="dash-bottom-grid">
+        <div class="card">
+          <div class="card-header"><h3>Status Domínio</h3></div>
+          <div style="padding:12px 16px 20px;display:flex;flex-direction:column;align-items:center;gap:4px">
+            <canvas id="dominioChart" width="200" height="200"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Últimas Notas</h3></div>
+          <div class="table-wrap">
+            <table id="dashboardTable">
+              <thead>
+                <tr>
+                  <th>Nº NF</th><th>Data</th><th>Emitente</th><th>Destinatário</th><th>Valor</th><th>Tipo</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>

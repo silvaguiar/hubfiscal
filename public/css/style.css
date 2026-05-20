@@ -153,7 +153,13 @@ button, input, select, textarea {
 .top-bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+#userInfoBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .env-badge {
   font-size: 0.72rem;
@@ -189,9 +195,17 @@ button, input, select, textarea {
 /* ── Stats Grid ───────────────────────────────────── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* ── Dashboard bottom layout ──────────────────────── */
+.dash-bottom-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
   gap: 20px;
-  margin-bottom: 28px;
+  align-items: start;
 }
 .stat-card {
   background: var(--bg-card);
@@ -496,6 +510,7 @@ select.input-field { cursor: pointer; }
   .main-content { margin-left: 0; }
   .menu-toggle { display: block; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+  .dash-bottom-grid { grid-template-columns: 1fr; }
   .page { padding: 20px; }
   .filter-group { flex-direction: column; }
   .filter-group .input-field { width: 100%; min-width: auto; }

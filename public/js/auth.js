@@ -81,21 +81,27 @@ const Auth = {
     const el = document.getElementById('userInfoBar');
     if (!el || !this.usuario) return;
 
-    const badges = {
-      master:   { label: '👑 Master',  bg: '#f59e0b22', color: '#f59e0b' },
-      admin:    { label: '👤 Padrão',  bg: '#6366f122', color: '#818cf8' },
-      operador: { label: '⚙️ Operador', bg: '#10b98122', color: '#34d399' },
-      viewer:   { label: '👁️ Viewer',  bg: '#64748b22', color: '#94a3b8' }
+    const perfilConfig = {
+      master:   { label: 'Master',   color: '#f59e0b', grad: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+      admin:    { label: 'Admin',    color: '#818cf8', grad: 'linear-gradient(135deg,#6366f1,#4f46e5)' },
+      operador: { label: 'Operador', color: '#34d399', grad: 'linear-gradient(135deg,#10b981,#059669)' },
+      viewer:   { label: 'Viewer',   color: '#94a3b8', grad: 'linear-gradient(135deg,#64748b,#475569)' }
     };
-    const badge = badges[this.usuario.perfil] || badges.viewer;
+    const cfg = perfilConfig[this.usuario.perfil] || perfilConfig.viewer;
+    const initials = this.usuario.nome.split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
     el.innerHTML = `
-      <span style="font-size:13px;color:#94a3b8;margin-right:6px;">${this.usuario.nome}</span>
-      <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:${badge.bg};color:${badge.color};">${badge.label}</span>
+      <div style="width:34px;height:34px;border-radius:50%;background:${cfg.grad};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;box-shadow:0 2px 10px ${cfg.color}55">${initials}</div>
+      <div style="display:flex;flex-direction:column;line-height:1.25;margin-right:2px">
+        <span style="font-size:13px;color:#e2e8f0;font-weight:500;white-space:nowrap">${this.usuario.nome}</span>
+        <span style="font-size:10px;font-weight:700;color:${cfg.color};text-transform:uppercase;letter-spacing:.6px">${cfg.label}</span>
+      </div>
+      <div style="width:1px;height:26px;background:rgba(255,255,255,.1);margin:0 2px"></div>
       <button onclick="Auth.logout()" title="Sair"
-        style="background:none;border:none;cursor:pointer;color:#64748b;padding:6px;display:flex;align-items:center;margin-left:4px;border-radius:8px;transition:all .2s;"
-        onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='none'">
-        <span class="material-icons-round" style="font-size:18px;">logout</span>
+        style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);cursor:pointer;color:#f87171;padding:5px 12px;display:flex;align-items:center;gap:5px;border-radius:8px;font-size:12px;font-weight:600;white-space:nowrap;transition:all .2s;"
+        onmouseover="this.style.background='rgba(239,68,68,.22)';this.style.borderColor='rgba(239,68,68,.5)'"
+        onmouseout="this.style.background='rgba(239,68,68,.1)';this.style.borderColor='rgba(239,68,68,.25)'">
+        <span class="material-icons-round" style="font-size:15px">logout</span>Sair
       </button>
     `;
   },
