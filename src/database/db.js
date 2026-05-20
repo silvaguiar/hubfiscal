@@ -328,7 +328,8 @@ async function getNotasParaDominio(empresaId, filtros = {}) {
   const params = [empresaId];
 
   if (!filtros.reenviar) {
-    where.push("(dominio_status = 'pendente' OR dominio_status IS NULL)");
+    // 'enviando' é incluído para recuperar notas interrompidas por restart do servidor
+    where.push("(dominio_status IN ('pendente', 'enviando') OR dominio_status IS NULL)");
   } else {
     where.push("dominio_status = 'erro'");
   }
