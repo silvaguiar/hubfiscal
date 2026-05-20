@@ -157,7 +157,8 @@ class TotvsClient {
       const response = await axios.post(url, payload, { headers, timeout: 30000 });
       const data = response.data;
       const pageItems = data.items || data.data || [];
-      const hasNext = data.hasNext || (pageItems.length === pageSize && pageItems.length > 0);
+      // Usa hasNext da API quando presente; só usa fallback por tamanho se o campo vier undefined
+      const hasNext = data.hasNext !== undefined ? data.hasNext === true : (pageItems.length === pageSize && pageItems.length > 0);
       return { data: pageItems, hasNext };
     } catch (err) {
       if (err.response?.status === 401) {

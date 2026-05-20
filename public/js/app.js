@@ -11,7 +11,13 @@ const app = {
     this.setupNavigation();
     this.setupCertUpload();
     this.loadConfig();
-    this.loadDashboard();
+
+    const savedPage = localStorage.getItem('hubfiscal_page');
+    if (savedPage && document.getElementById(`page-${savedPage}`)) {
+      this.navigateTo(savedPage);
+    } else {
+      this.loadDashboard();
+    }
     this.loadEmpresas(); // Preenche os selects (filtros) das outras telas
     const menuToggle = document.getElementById('menuToggle');
     if (menuToggle) {
@@ -52,6 +58,7 @@ const app = {
     document.getElementById(`page-${page}`).classList.add('active');
     document.querySelector(`[data-page="${page}"]`).classList.add('active');
     this.currentPage = page;
+    localStorage.setItem('hubfiscal_page', page);
     if (page === 'dashboard')    this.loadDashboard();
     if (page === 'notas')        this.loadNotas();
     if (page === 'config')       this.loadEmpresas();
