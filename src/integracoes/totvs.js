@@ -139,7 +139,7 @@ class TotvsClient {
         endDate: filtros.endDate
       },
       invoiceStatusList: ["E"],
-      eletronicInvoiceStatusList: ["A", "C"],
+      eletronicInvoiceStatusList: ["A", "C", "D"],
       origin: 1
     };
 
