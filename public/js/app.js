@@ -366,7 +366,6 @@ const app = {
     const log = document.getElementById('totvsLogHub');
     const btn = document.querySelector('#page-importador_nfs .hub-card:nth-child(2) button');
 
-    if (!empresaId) return this.toast('Selecione uma empresa', 'error');
     if (!mes) return this.toast('Selecione o mês de referência', 'error');
 
     btn.disabled = true;
@@ -569,7 +568,8 @@ const app = {
       if (el) {
         const val = el.value;
         let html = '<option value="">Todas as Empresas</option>';
-        if (id === 'syncEmpresaHub' || id === 'totvsEmpresaHub') html = ''; // No "Todas" option
+        if (id === 'syncEmpresaHub') html = ''; // No "Todas" option
+        if (id === 'totvsEmpresaHub') html = '<option value="">🏢 Todas as Empresas (lote)</option>';
         if (id === 'manualEmpresaHub') html = '<option value="">Detectar automaticamente</option>';
         
         empresas.forEach(emp => {
