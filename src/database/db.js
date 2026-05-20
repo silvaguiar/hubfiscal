@@ -80,6 +80,14 @@ async function initialize() {
   } catch (err) {
     console.error('Erro ao migrar coluna permissoes em usuarios:', err.message);
   }
+  // Ao reiniciar, marca logs que ficaram presos em 'executando'/'in_progress' como falhos
+  try {
+    await runSql(
+      `UPDATE logs_execucao SET status = 'failed', detalhes = COALESCE(detalhes, '') || '\n[Interrompido por reinício do servidor]' WHERE status IN ('executando', 'in_progress')`
+    );
+  } catch (err) {
+    console.error('Erro ao limpar logs travados:', err.message);
+  }
   await criarMasterSeNaoExistir();
 }
 
