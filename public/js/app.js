@@ -832,6 +832,25 @@ const app = {
     } catch (err) { console.error('Erro ao carregar stats Domínio:', err); }
   },
 
+  async resetarDominioEmpresa() {
+    const empresaId = document.getElementById('dominioEmpresa').value;
+    if (!empresaId) return this.toast('Selecione uma empresa específica para resetar', 'error');
+
+    const empresa = document.getElementById('dominioEmpresa').options[document.getElementById('dominioEmpresa').selectedIndex].text;
+    if (!confirm(`Isso vai marcar TODAS as notas de "${empresa}" como pendente para reenvio ao Domínio.\n\nUse apenas quando a chave de integração estava errada e as notas precisam ser reenviadas com a chave correta.\n\nContinuar?`)) return;
+
+    try {
+      const res = await fetch(`/api/dominio/resetar/${empresaId}`, { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        this.toast(`${data.total} nota(s) marcadas como pendente. Clique em "Enviar Pendentes" para reenviar.`, 'success');
+        this.loadDominioPage();
+      } else {
+        this.toast(data.error || 'Erro ao resetar', 'error');
+      }
+    } catch (err) { this.toast('Erro ao resetar empresa', 'error'); }
+  },
+
   async enviarDominio(reenviar = false) {
     const empresaId = document.getElementById('dominioEmpresa').value;
     if (!empresaId) return this.toast('Selecione uma empresa', 'error');

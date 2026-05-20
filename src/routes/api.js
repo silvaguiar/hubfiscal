@@ -625,6 +625,15 @@ module.exports = function (db, upload) {
   });
 
   // Salvar config global Domínio
+  // Reseta status Domínio de todas as notas de uma empresa para 'pendente' (força reenvio total)
+  router.post('/dominio/resetar/:empresaId', requireModulo('dominio', 'create'), async (req, res) => {
+    try {
+      const empresaId = parseInt(req.params.empresaId);
+      const total = await db.resetarDominioEmpresa(empresaId);
+      res.json({ success: true, total });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   router.post('/config/dominio', requirePerfil('master'), async (req, res) => {
     try {
       await db.saveDominioGlobalConfig(req.body);
