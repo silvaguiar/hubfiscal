@@ -143,13 +143,16 @@ class TotvsClient {
       origin: 1
     };
 
-    // Prioriza lista de branches vinda nos filtros (modo lote); senão usa o branch da config
+    const validInt = (v) => { const n = parseInt(v); return !isNaN(n) && n > 0 ? n : null; };
+
     if (filtros.branchCodeList && filtros.branchCodeList.length > 0) {
-      filter.branchCodeList = filtros.branchCodeList.map(b => parseInt(b));
+      const valid = filtros.branchCodeList.map(validInt).filter(Boolean);
+      if (valid.length > 0) filter.branchCodeList = valid;
     } else if (this.branch) {
-      filter.branchCodeList = [parseInt(this.branch)];
+      const b = validInt(this.branch);
+      if (b) filter.branchCodeList = [b];
     }
-    // Se nenhum branch configurado, omite o campo (array vazio retorna 0 resultados na TOTVS)
+    // Se nenhum branch válido, omite o campo — a TOTVS retorna todas as filiais
 
     const payload = { filter, page, pageSize };
 
