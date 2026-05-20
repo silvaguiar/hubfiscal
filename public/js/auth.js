@@ -70,10 +70,10 @@ const Auth = {
     if (!el || !this.usuario) return;
 
     const badges = {
-      master:   { label: 'Master',   bg: '#f59e0b22', color: '#f59e0b' },
-      admin:    { label: 'Admin',    bg: '#6366f122', color: '#818cf8' },
-      operador: { label: 'Operador', bg: '#10b98122', color: '#34d399' },
-      viewer:   { label: 'Viewer',   bg: '#64748b22', color: '#94a3b8' }
+      master:   { label: '👑 Master',  bg: '#f59e0b22', color: '#f59e0b' },
+      admin:    { label: '👤 Padrão',  bg: '#6366f122', color: '#818cf8' },
+      operador: { label: '⚙️ Operador', bg: '#10b98122', color: '#34d399' },
+      viewer:   { label: '👁️ Viewer',  bg: '#64748b22', color: '#94a3b8' }
     };
     const badge = badges[this.usuario.perfil] || badges.viewer;
 
@@ -90,15 +90,15 @@ const Auth = {
 
   // Esconde elementos que o usuário não tem permissão
   _aplicarPermissoes() {
-    // Aba Usuários: apenas master/admin
+    const isMaster = this.usuario?.perfil === 'master';
+
+    // Aba Usuários: apenas master
     const abUsuarios = document.querySelector('[data-page="usuarios"]');
-    if (abUsuarios && !this.temPerfil('admin')) {
-      abUsuarios.style.display = 'none';
-    }
-    // Aba Agendamentos: operador ou superior
-    const abAgenda = document.querySelector('[data-page="agendamentos"]');
-    if (abAgenda && !this.temPerfil('operador')) {
-      abAgenda.style.display = 'none';
-    }
+    if (abUsuarios) abUsuarios.style.display = isMaster ? '' : 'none';
+
+    // Botões de configuração global: apenas master
+    document.querySelectorAll('[data-master-only]').forEach(el => {
+      el.style.display = isMaster ? '' : 'none';
+    });
   }
 };

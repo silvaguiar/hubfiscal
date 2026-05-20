@@ -7,6 +7,7 @@ const XLSX = require('xlsx');
 const SefazClient = require('../sefaz/client');
 const TotvsService = require('../integracoes/totvs-service');
 const DominioService = require('../integracoes/dominio-service');
+const { requirePerfil } = require('../auth/middleware');
 
 module.exports = function (db, upload) {
 
@@ -40,7 +41,7 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/config/totvs', async (req, res) => {
+  router.post('/config/totvs', requirePerfil('master'), async (req, res) => {
     try {
       await db.saveTotvsGlobalConfig(req.body);
       res.json({ success: true });
@@ -624,7 +625,7 @@ module.exports = function (db, upload) {
   });
 
   // Salvar config global Domínio
-  router.post('/config/dominio', async (req, res) => {
+  router.post('/config/dominio', requirePerfil('master'), async (req, res) => {
     try {
       await db.saveDominioGlobalConfig(req.body);
       res.json({ success: true });

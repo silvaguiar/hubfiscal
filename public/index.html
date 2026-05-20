@@ -692,10 +692,8 @@
         <div class="form-group">
           <label>Perfil de Acesso</label>
           <select id="modalUPerfil" class="input-field">
-            <option value="viewer">👁️ Viewer — Somente leitura</option>
-            <option value="operador">⚙️ Operador — Sincroniza e exporta</option>
-            <option value="admin">🛡️ Admin — Gerencia empresas e operadores</option>
-            <option value="master">👑 Master — Acesso total</option>
+            <option value="admin">👤 Padrão — Acesso completo (exceto config global)</option>
+            <option value="master">👑 Master — Acesso total ao sistema</option>
           </select>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
@@ -721,10 +719,10 @@
           </div>
           <div style="display:flex; gap:10px">
 
-            <button class="btn btn-secondary" onclick="app.abrirModalTotvsConfig()">
+            <button class="btn btn-secondary" data-master-only onclick="app.abrirModalTotvsConfig()">
               <span class="material-icons-round">settings_input_component</span>Configurar ERP Global
             </button>
-            <button class="btn btn-secondary" onclick="app.abrirModalDominioConfig()">
+            <button class="btn btn-secondary" data-master-only onclick="app.abrirModalDominioConfig()">
               <span class="material-icons-round">cloud_upload</span>Configurar Domínio Global
             </button>
             <button class="btn btn-primary" onclick="app.abrirModalEmpresa()">

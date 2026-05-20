@@ -1331,7 +1331,7 @@ const app = {
       const tbody  = document.getElementById('usuariosTableBody');
       const badges = {
         master:   { label: '👑 Master',   bg: '#f59e0b22', color: '#f59e0b' },
-        admin:    { label: '🛡️ Admin',    bg: '#6366f122', color: '#818cf8' },
+        admin:    { label: '👤 Padrão',   bg: '#6366f122', color: '#818cf8' },
         operador: { label: '⚙️ Operador', bg: '#10b98122', color: '#34d399' },
         viewer:   { label: '👁️ Viewer',   bg: '#64748b22', color: '#94a3b8' }
       };
