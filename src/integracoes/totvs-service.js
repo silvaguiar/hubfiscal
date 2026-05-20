@@ -142,8 +142,16 @@ class TotvsService {
 
     try {
       await client.obterToken();
-      const cnpjs = empresas.map(e => e.cnpj);
-      const searchResult = await client.buscarInvoices({ personCpfCnpjList: cnpjs, startDate, endDate });
+
+      // Monta branchCodeList com todos os códigos de filial das empresas ativas
+      const branches = [...new Set(
+        empresas.map(e => e.totvs_branch).filter(b => b != null && b !== '').map(b => parseInt(b))
+      )];
+      const filtros = { startDate, endDate };
+      if (branches.length > 0) filtros.branchCodeList = branches;
+
+      this.writeLog(`🏢 Filiais TOTVS para busca: [${branches.join(', ') || 'todas'}]`);
+      const searchResult = await client.buscarInvoices(filtros);
       const invoices = searchResult.data || [];
       
       this.writeLog(`✅ TOTVS retornou ${invoices.length} registros.`);

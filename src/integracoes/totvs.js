@@ -143,10 +143,13 @@ class TotvsClient {
       origin: 1
     };
 
-    // Só envia branchCodeList se estiver configurado — array vazio retorna 0 resultados no TOTVS
-    if (this.branch) {
+    // Prioriza lista de branches vinda nos filtros (modo lote); senão usa o branch da config
+    if (filtros.branchCodeList && filtros.branchCodeList.length > 0) {
+      filter.branchCodeList = filtros.branchCodeList.map(b => parseInt(b));
+    } else if (this.branch) {
       filter.branchCodeList = [parseInt(this.branch)];
     }
+    // Se nenhum branch configurado, omite o campo (array vazio retorna 0 resultados na TOTVS)
 
     const payload = { filter, page, pageSize };
 
