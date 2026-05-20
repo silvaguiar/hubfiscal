@@ -698,6 +698,56 @@
             <option value="master">👑 Master — Acesso total ao sistema</option>
           </select>
         </div>
+        <!-- Permissões por módulo (oculto para master) -->
+        <div id="permissoesSection" style="margin-top:4px;margin-bottom:16px;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.6px">Permissões por Módulo</div>
+          <div style="display:grid;gap:8px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+              <span style="font-size:13px;color:var(--text)">📄 Notas Fiscais</span>
+              <select id="permNotas" class="input-field" style="padding:6px 10px;font-size:12px">
+                <option value="none">🚫 Sem acesso</option>
+                <option value="view">👁️ Visualizar</option>
+                <option value="create">✏️ Visualizar e importar</option>
+                <option value="manage">⚙️ Visualizar, importar e excluir</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+              <span style="font-size:13px;color:var(--text)">🔄 Importar TOTVS</span>
+              <select id="permTotvs" class="input-field" style="padding:6px 10px;font-size:12px">
+                <option value="none">🚫 Sem acesso</option>
+                <option value="view">👁️ Ver logs</option>
+                <option value="create">✏️ Ver logs e importar</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+              <span style="font-size:13px;color:var(--text)">🏢 Empresas</span>
+              <select id="permEmpresas" class="input-field" style="padding:6px 10px;font-size:12px">
+                <option value="none">🚫 Sem acesso</option>
+                <option value="view">👁️ Visualizar</option>
+                <option value="create">✏️ Visualizar e cadastrar</option>
+                <option value="manage">⚙️ Visualizar, cadastrar e excluir</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+              <span style="font-size:13px;color:var(--text)">📅 Agendamentos</span>
+              <select id="permAgendamentos" class="input-field" style="padding:6px 10px;font-size:12px">
+                <option value="none">🚫 Sem acesso</option>
+                <option value="view">👁️ Visualizar</option>
+                <option value="create">✏️ Visualizar e criar</option>
+                <option value="manage">⚙️ Visualizar, criar e excluir</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center">
+              <span style="font-size:13px;color:var(--text)">📤 Domínio</span>
+              <select id="permDominio" class="input-field" style="padding:6px 10px;font-size:12px">
+                <option value="none">🚫 Sem acesso</option>
+                <option value="view">👁️ Visualizar</option>
+                <option value="create">✏️ Visualizar e enviar</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
           <input type="checkbox" id="modalUAtivo" checked style="width:18px;height:18px;accent-color:#6366f1">
           <label for="modalUAtivo" style="cursor:pointer;font-weight:500">Usuário ativo</label>

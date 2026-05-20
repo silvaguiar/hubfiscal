@@ -75,6 +75,11 @@ async function initialize() {
   } catch (err) {
     console.error('Erro ao migrar coluna notas_existentes em logs_execucao:', err.message);
   }
+  try {
+    await runSql("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT DEFAULT '{}'");
+  } catch (err) {
+    console.error('Erro ao migrar coluna permissoes em usuarios:', err.message);
+  }
   await criarMasterSeNaoExistir();
 }
 
@@ -386,14 +391,20 @@ async function criarMasterSeNaoExistir() {
   } catch (e) { console.error('⚠️ Erro ao criar usuário master:', e.message); }
 }
 
-async function getUsuarios() { return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at FROM usuarios ORDER BY perfil ASC, nome ASC'); }
+async function getUsuarios() { return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at, permissoes FROM usuarios ORDER BY perfil ASC, nome ASC'); }
 async function getUsuarioById(id) { return await queryOne('SELECT * FROM usuarios WHERE id = ?', [id]); }
 async function getUsuarioByEmail(email) { return await queryOne('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email.toLowerCase()]); }
-async function createUsuario(data) { await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, ?, 1)`, [data.nome, data.email, data.senha_hash, data.perfil || 'viewer']); return await getUsuarioByEmail(data.email); }
+async function createUsuario(data) {
+  const perm = data.permissoes ? (typeof data.permissoes === 'object' ? JSON.stringify(data.permissoes) : data.permissoes) : '{}';
+  await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, permissoes) VALUES (?, ?, ?, ?, 1, ?)`, [data.nome, data.email, data.senha_hash, data.perfil || 'admin', perm]);
+  return await getUsuarioByEmail(data.email);
+}
 async function updateUsuario(id, data) {
   const u = await getUsuarioById(id);
   if (!u) throw new Error('Usuário não encontrado');
-  await runSql(`UPDATE usuarios SET nome = COALESCE(?, nome), email = COALESCE(?, email), senha_hash = COALESCE(?, senha_hash), perfil = COALESCE(?, perfil), ativo = COALESCE(?, ativo), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [data.nome || null, data.email || null, data.senha_hash || null, data.perfil || null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, id]);
+  const perm = data.permissoes !== undefined ? (typeof data.permissoes === 'object' ? JSON.stringify(data.permissoes) : data.permissoes) : null;
+  await runSql(`UPDATE usuarios SET nome = COALESCE(?, nome), email = COALESCE(?, email), senha_hash = COALESCE(?, senha_hash), perfil = COALESCE(?, perfil), ativo = COALESCE(?, ativo), permissoes = COALESCE(?, permissoes), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [data.nome || null, data.email || null, data.senha_hash || null, data.perfil || null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, perm, id]);
   return await getUsuarioById(id);
 }
 async function deleteUsuario(id) { await runSql('DELETE FROM usuarios WHERE id = ?', [id]); }

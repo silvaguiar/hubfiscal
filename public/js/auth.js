@@ -56,12 +56,24 @@ const Auth = {
     };
   },
 
-  // Verifica se o usuário tem o perfil mínimo exigido
+  // Verifica perfil mínimo (hierarquia de roles)
   temPerfil(perfilMinimo) {
     const hierarquia = { master: 4, admin: 3, operador: 2, viewer: 1 };
     const meu = hierarquia[this.usuario?.perfil] || 0;
     const min = hierarquia[perfilMinimo] || 0;
     return meu >= min;
+  },
+
+  // Verifica permissão granular por módulo
+  // Módulos: notas | agendamentos | empresas | dominio | totvs
+  // Níveis:  none | view | create | manage
+  // Se o módulo não estiver configurado → assume manage (compat. com usuários antigos)
+  temPermissao(modulo, nivel) {
+    if (this.usuario?.perfil === 'master') return true;
+    const niveis = { none: 0, view: 1, create: 2, manage: 3 };
+    const perm = this.usuario?.permissoes || {};
+    const userNivel = perm[modulo] !== undefined ? (niveis[perm[modulo]] ?? 0) : niveis.manage;
+    return userNivel >= (niveis[nivel] ?? 0);
   },
 
   // Renderiza barra de usuário no topo
@@ -88,17 +100,35 @@ const Auth = {
     `;
   },
 
-  // Esconde elementos que o usuário não tem permissão
+  // Aplica permissões na UI: oculta abas e botões conforme configuração do usuário
   _aplicarPermissoes() {
     const isMaster = this.usuario?.perfil === 'master';
 
-    // Aba Usuários: apenas master
+    // Aba Usuários e botões exclusivos do master
     const abUsuarios = document.querySelector('[data-page="usuarios"]');
     if (abUsuarios) abUsuarios.style.display = isMaster ? '' : 'none';
-
-    // Botões de configuração global: apenas master
     document.querySelectorAll('[data-master-only]').forEach(el => {
       el.style.display = isMaster ? '' : 'none';
+    });
+
+    if (isMaster) return; // master sempre vê tudo
+
+    // Oculta abas cujo módulo está com none
+    const abas = {
+      notas:        document.querySelector('[data-page="notas"]'),
+      agendamentos: document.querySelector('[data-page="agendamentos"]'),
+      config:       document.querySelector('[data-page="config"]'),
+      dominio:      document.querySelector('[data-page="dominio"]'),
+    };
+    if (abas.notas)        abas.notas.style.display        = this.temPermissao('notas', 'view')        ? '' : 'none';
+    if (abas.agendamentos) abas.agendamentos.style.display = this.temPermissao('agendamentos', 'view') ? '' : 'none';
+    if (abas.config)       abas.config.style.display       = this.temPermissao('empresas', 'view')     ? '' : 'none';
+    if (abas.dominio)      abas.dominio.style.display      = this.temPermissao('dominio', 'view')      ? '' : 'none';
+
+    // Oculta botões de ação marcados com data-perm="modulo:nivel"
+    document.querySelectorAll('[data-perm]').forEach(el => {
+      const [mod, niv] = (el.dataset.perm || '').split(':');
+      el.style.display = this.temPermissao(mod, niv) ? '' : 'none';
     });
   }
 };

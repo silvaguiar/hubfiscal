@@ -36,6 +36,32 @@ function requirePerfil(...perfisPermitidos) {
   };
 }
 
+/**
+ * Níveis de permissão por módulo
+ * Módulos: notas | agendamentos | empresas | dominio | totvs
+ * Níveis:  none(0) | view(1) | create(2) | manage(3)
+ * Se o módulo não estiver na lista do usuário → assume manage (compat. com usuários antigos)
+ */
+const NIVEL_MODULO = { none: 0, view: 1, create: 2, manage: 3 };
+
+function parsePermissoes(raw) {
+  if (!raw) return {};
+  try { return typeof raw === 'object' ? raw : JSON.parse(raw); } catch { return {}; }
+}
+
+function requireModulo(modulo, nivel) {
+  return (req, res, next) => {
+    if (!req.usuario) return res.status(401).json({ error: 'Não autenticado.' });
+    if (req.usuario.perfil === 'master') return next();
+    const perm = parsePermissoes(req.usuario.permissoes);
+    const userNivel = perm[modulo] !== undefined ? (NIVEL_MODULO[perm[modulo]] ?? 0) : NIVEL_MODULO.manage;
+    if (userNivel < (NIVEL_MODULO[nivel] ?? 0)) {
+      return res.status(403).json({ error: 'Sem permissão para esta operação.' });
+    }
+    next();
+  };
+}
+
 function extrairToken(req) {
   // 1. Cookie httpOnly (preferencial)
   if (req.cookies && req.cookies.hubfiscal_token) return req.cookies.hubfiscal_token;
@@ -47,4 +73,4 @@ function extrairToken(req) {
   return null;
 }
 
-module.exports = { requireAuth, requirePerfil };
+module.exports = { requireAuth, requirePerfil, requireModulo };

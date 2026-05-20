@@ -7,7 +7,7 @@ const XLSX = require('xlsx');
 const SefazClient = require('../sefaz/client');
 const TotvsService = require('../integracoes/totvs-service');
 const DominioService = require('../integracoes/dominio-service');
-const { requirePerfil } = require('../auth/middleware');
+const { requirePerfil, requireModulo } = require('../auth/middleware');
 
 module.exports = function (db, upload) {
 
@@ -70,7 +70,7 @@ module.exports = function (db, upload) {
 
   // ── Empresas (multi-CNPJ) ─────────────────────────────
 
-  router.get('/empresas', async (req, res) => {
+  router.get('/empresas', requireModulo('empresas', 'view'), async (req, res) => {
     try {
       const empresas = await db.getEmpresas();
       // Mask passwords
@@ -88,7 +88,7 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/empresas', async (req, res) => {
+  router.post('/empresas', requireModulo('empresas', 'create'), async (req, res) => {
     try {
       const { 
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
@@ -109,7 +109,7 @@ module.exports = function (db, upload) {
     }
   });
 
-  router.put('/empresas/:id', async (req, res) => {
+  router.put('/empresas/:id', requireModulo('empresas', 'create'), async (req, res) => {
     try {
       const { 
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
@@ -126,7 +126,7 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/empresas/:id', async (req, res) => {
+  router.delete('/empresas/:id', requireModulo('empresas', 'manage'), async (req, res) => {
     try {
       await db.deleteEmpresa(parseInt(req.params.id));
       res.json({ success: true });
@@ -171,7 +171,7 @@ module.exports = function (db, upload) {
 
   // ── Notas Fiscais ─────────────────────────────────────
 
-  router.get('/notas', async (req, res) => {
+  router.get('/notas', requireModulo('notas', 'view'), async (req, res) => {
     try {
       const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo } = req.query;
       const result = await db.getNotas({
@@ -202,7 +202,7 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/notas/:id', async (req, res) => {
+  router.delete('/notas/:id', requireModulo('notas', 'manage'), async (req, res) => {
     try {
       await db.deleteNota(parseInt(req.params.id));
       res.json({ success: true });
@@ -505,7 +505,7 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).send(err.message); }
   });
 
-  router.post('/totvs/extrair', express.json(), async (req, res) => {
+  router.post('/totvs/extrair', requireModulo('totvs', 'create'), express.json(), async (req, res) => {
     try {
       const { empresaId, mesReferencia } = req.body;
       if (!mesReferencia) return res.status(400).json({ error: 'Mês de referência é obrigatório.' });
@@ -548,7 +548,7 @@ module.exports = function (db, upload) {
   });
 
   // Enviar notas para Domínio (background)
-  router.post('/dominio/enviar', async (req, res) => {
+  router.post('/dominio/enviar', requireModulo('dominio', 'create'), async (req, res) => {
     try {
       const { empresaId, dataInicio, dataFim, tipo, reenviar } = req.body;
       if (!empresaId) return res.status(400).json({ error: 'Selecione uma empresa' });

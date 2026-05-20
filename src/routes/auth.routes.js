@@ -52,11 +52,15 @@ module.exports = function (db) {
       const senhaOk = await compararSenha(senha, usuario.senha_hash);
       if (!senhaOk) return res.status(401).json({ error: 'Credenciais inválidas.' });
 
+      let permissoes = {};
+      try { permissoes = typeof usuario.permissoes === 'string' ? JSON.parse(usuario.permissoes || '{}') : (usuario.permissoes || {}); } catch {}
+
       const payload = {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
-        perfil: usuario.perfil
+        perfil: usuario.perfil,
+        permissoes
       };
 
       const token = gerarToken(payload);
@@ -90,11 +94,14 @@ module.exports = function (db) {
   router.get('/me', requireAuth, async (req, res) => {
     const usuario = await db.getUsuarioById(req.usuario.id);
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    let permissoes = {};
+    try { permissoes = typeof usuario.permissoes === 'string' ? JSON.parse(usuario.permissoes || '{}') : (usuario.permissoes || {}); } catch {}
     res.json({
       id: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
-      perfil: usuario.perfil
+      perfil: usuario.perfil,
+      permissoes
     });
   });
 

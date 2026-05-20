@@ -1368,21 +1368,40 @@ const app = {
     document.getElementById('modalUNome').value = '';
     document.getElementById('modalUEmail').value = '';
     document.getElementById('modalUSenha').value = '';
-    document.getElementById('modalUPerfil').value = 'viewer';
+    document.getElementById('modalUPerfil').value = 'admin';
     document.getElementById('modalUAtivo').checked = true;
+
+    const togglePermissoes = () => {
+      const isMaster = document.getElementById('modalUPerfil').value === 'master';
+      document.getElementById('permissoesSection').style.display = isMaster ? 'none' : '';
+    };
+    document.getElementById('modalUPerfil').onchange = togglePermissoes;
+
+    const setPermissoes = (perm = {}) => {
+      const def = (mod) => perm[mod] !== undefined ? perm[mod] : 'manage';
+      document.getElementById('permNotas').value        = def('notas');
+      document.getElementById('permTotvs').value        = def('totvs');
+      document.getElementById('permEmpresas').value     = def('empresas');
+      document.getElementById('permAgendamentos').value = def('agendamentos');
+      document.getElementById('permDominio').value      = def('dominio');
+    };
 
     if (id) {
       try {
         const lista = await (await fetch('/api/usuarios', { credentials: 'include' })).json();
         const u = lista.find(x => x.id == id);
         if (u) {
-          document.getElementById('modalUNome').value  = u.nome;
-          document.getElementById('modalUEmail').value = u.email;
-          document.getElementById('modalUPerfil').value = u.perfil;
+          document.getElementById('modalUNome').value    = u.nome;
+          document.getElementById('modalUEmail').value   = u.email;
+          document.getElementById('modalUPerfil').value  = u.perfil;
           document.getElementById('modalUAtivo').checked = !!u.ativo;
+          setPermissoes(u.permissoes || {});
         }
       } catch (_) {}
+    } else {
+      setPermissoes({});
     }
+    togglePermissoes();
     document.getElementById('modalUsuario').classList.add('active');
   },
 
@@ -1404,7 +1423,14 @@ const app = {
     try {
       const url    = id ? `/api/usuarios/${id}` : '/api/usuarios';
       const method = id ? 'PUT' : 'POST';
-      const body   = { nome, email, perfil, ativo };
+      const permissoes = perfil === 'master' ? {} : {
+        notas:        document.getElementById('permNotas').value,
+        totvs:        document.getElementById('permTotvs').value,
+        empresas:     document.getElementById('permEmpresas').value,
+        agendamentos: document.getElementById('permAgendamentos').value,
+        dominio:      document.getElementById('permDominio').value,
+      };
+      const body = { nome, email, perfil, ativo, permissoes };
       if (senha) body.senha = senha;
 
       const res = await fetch(url, {

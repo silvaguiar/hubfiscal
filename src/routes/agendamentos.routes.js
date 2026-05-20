@@ -3,12 +3,12 @@
  */
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requirePerfil } = require('../auth/middleware');
+const { requireAuth, requirePerfil, requireModulo } = require('../auth/middleware');
 
 module.exports = function (db, scheduler) {
 
   // GET /api/agendamentos — lista todos os agendamentos
-  router.get('/', requireAuth, async (req, res) => {
+  router.get('/', requireAuth, requireModulo('agendamentos', 'view'), async (req, res) => {
     try {
       const agendamentos = await db.getAgendamentos();
       res.json(agendamentos);
@@ -16,7 +16,7 @@ module.exports = function (db, scheduler) {
   });
 
   // POST /api/agendamentos — criar agendamento
-  router.post('/', requireAuth, requirePerfil('operador', 'admin', 'master'), async (req, res) => {
+  router.post('/', requireAuth, requireModulo('agendamentos', 'create'), async (req, res) => {
     try {
       const { empresa_id, tipo, nome, cron_expressao, dias_offset, ativo } = req.body;
       if (!empresa_id || !tipo) return res.status(400).json({ error: 'empresa_id e tipo são obrigatórios.' });
@@ -27,7 +27,7 @@ module.exports = function (db, scheduler) {
   });
 
   // PUT /api/agendamentos/:id — atualizar agendamento
-  router.put('/:id', requireAuth, requirePerfil('operador', 'admin', 'master'), async (req, res) => {
+  router.put('/:id', requireAuth, requireModulo('agendamentos', 'create'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const ag = await db.updateAgendamento(id, req.body);
@@ -37,7 +37,7 @@ module.exports = function (db, scheduler) {
   });
 
   // DELETE /api/agendamentos/:id
-  router.delete('/:id', requireAuth, requirePerfil('admin', 'master'), async (req, res) => {
+  router.delete('/:id', requireAuth, requireModulo('agendamentos', 'manage'), async (req, res) => {
     try {
       await db.deleteAgendamento(parseInt(req.params.id));
       scheduler.recarregar();
@@ -46,7 +46,7 @@ module.exports = function (db, scheduler) {
   });
 
   // POST /api/agendamentos/:id/executar — executa o job manualmente agora
-  router.post('/:id/executar', requireAuth, requirePerfil('operador', 'admin', 'master'), async (req, res) => {
+  router.post('/:id/executar', requireAuth, requireModulo('agendamentos', 'create'), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const agendamento = await db.getAgendamentoById(id);
