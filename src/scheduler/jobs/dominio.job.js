@@ -42,8 +42,18 @@ async function executarDominioJob(db, agendamento) {
     }
  
     console.log(`[SCHEDULER][DOMÍNIO] ${label} — Enviando pendentes...`);
- 
+
     const service = new DominioService(db);
+
+    // Em modo lote: pré-aquece o token uma vez para o primeiro conjunto de credenciais.
+    // Como o DominioClient usa cache em memória keyed por clientId, as demais empresas
+    // que compartilham as mesmas credenciais reutilizarão o mesmo token automaticamente,
+    // garantindo no máximo 1 geração de token por conjunto de credenciais por execução.
+    if (isGlobal && empresas.length > 0) {
+      console.log('[SCHEDULER][DOMÍNIO] Pré-aquecendo token antes do lote...');
+      try { await service.testarConexao(empresas[0].id); } catch (_) {}
+    }
+
     let totalEnviadas = 0;
     let totalErros = 0;
     let totalGeral = 0;

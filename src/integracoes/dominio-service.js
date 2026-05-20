@@ -85,17 +85,22 @@ class DominioService {
       return { success: true, enviadas: 0, erros: 0, total: 0 };
     }
 
-    const tokenValido = empresa.dominio_token && empresa.dominio_token_expiry && Date.now() < parseInt(empresa.dominio_token_expiry);
+    // Verifica token na empresa ou no config global (empresas que usam credenciais globais
+    // não têm token próprio na linha da empresa, mas o token global é igualmente válido)
+    const tokenEmpresa = empresa.dominio_token || globalConfig.dominio_token;
+    const tokenExpiry  = empresa.dominio_token_expiry || globalConfig.dominio_token_expiry;
+    const tokenValido  = tokenEmpresa && tokenExpiry && Date.now() < parseInt(tokenExpiry);
+
     if (!tokenValido) {
-      this.writeLog('🔑 Token Domínio expirado ou inexistente. Testando conexão para gerar/renovar token...');
+      this.writeLog('🔑 Token Domínio expirado ou inexistente. Gerando novo token...');
       const testeConexao = await client.testarConexao();
       if (!testeConexao.success) {
         this.writeLog(`❌ Falha na conexão: ${testeConexao.message}`);
         throw new Error(`Falha na conexão com Domínio: ${testeConexao.message}`);
       }
-      this.writeLog('✅ Conexão OK. Token gerado/renovado com sucesso. Iniciando envio...');
+      this.writeLog('✅ Token gerado com sucesso. Iniciando envio...');
     } else {
-      this.writeLog('🔑 Token Domínio válido em cache. Enviando sem nova geração de token.');
+      this.writeLog('🔑 Token Domínio válido. Enviando sem nova geração de token.');
     }
 
     let enviadas = 0;
