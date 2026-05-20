@@ -62,7 +62,16 @@ async function executarDominioJob(db, agendamento) {
     for (const emp of empresas) {
       console.log(`[SCHEDULER][DOMÍNIO] Iniciando lote para: ${emp.razao_social}`);
       try {
-        const result = await service.enviar(emp.id, {});
+        const baseEnviadas = totalEnviadas;
+        const result = await service.enviar(emp.id, {}, (enviadas, total) => {
+          // Atualiza contagem em tempo real a cada nota enviada
+          if (logId) {
+            db.updateLogExecucao(logId, {
+              notas_encontradas: totalGeral + total,
+              notas_enviadas: baseEnviadas + enviadas
+            }).catch(() => {});
+          }
+        });
         totalEnviadas += result.enviadas || 0;
         totalErros += result.erros || 0;
         totalGeral += result.total || 0;

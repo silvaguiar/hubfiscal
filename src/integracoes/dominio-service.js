@@ -63,7 +63,7 @@ class DominioService {
    * @param {object} filtros - { dataInicio, dataFim, tipo, reenviar }
    * @returns {object} Resultado do envio
    */
-  async enviar(empresaId, filtros = {}) {
+  async enviar(empresaId, filtros = {}, onProgress = null) {
     // Limpa log anterior
     if (fs.existsSync(this.logPath)) fs.unlinkSync(this.logPath);
 
@@ -135,6 +135,7 @@ class DominioService {
           await this.db.updateDominioStatus(nota.id, 'enviado', null, result.batchId);
           this.writeLog(`✅ NF ${nota.numero_nf || 'S/N'} enviada com sucesso.`);
           enviadas++;
+          if (onProgress) onProgress(enviadas, notas.length);
         } else {
           await this.db.updateDominioStatus(nota.id, 'erro', result.error);
           this.writeLog(`❌ Erro ao enviar NF ${nota.numero_nf || 'S/N'}: ${result.error}`);
