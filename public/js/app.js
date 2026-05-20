@@ -1167,7 +1167,7 @@ const app = {
       const tbody = document.getElementById('logsAgendamentosBody');
       if (!tbody) return;
       if (!logs.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Nenhuma execução registrada ainda</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px">Nenhuma execução registrada ainda</td></tr>';
         return;
       }
       const statusMap = {
@@ -1193,6 +1193,7 @@ const app = {
           <td><span style="color:${s.color};font-weight:600">${s.icon} ${s.label}</span></td>
           <td style="text-align:center">${l.notas_encontradas || 0}</td>
           <td style="text-align:center">${l.notas_inseridas || 0}</td>
+          <td style="text-align:center;color:${l.notas_existentes > 0 ? '#94a3b8' : ''}">${l.notas_existentes || 0}</td>
           <td style="text-align:center">${l.notas_enviadas || 0}</td>
           <td style="text-align:center;font-family:monospace;font-size:12px">${dur}</td>
         </tr>`;

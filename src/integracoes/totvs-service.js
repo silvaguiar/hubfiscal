@@ -247,6 +247,7 @@ class TotvsService {
         status: 'completed',
         notas_encontradas: invoices.length,
         notas_inseridas: salvos,
+        notas_existentes: pulados,
         notas_enviadas: 0,
         detalhes: this.logBuffer,
         duracao_ms: Date.now() - startTime

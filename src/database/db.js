@@ -70,6 +70,11 @@ async function initialize() {
   } catch (err) {
     console.error('Erro ao migrar coluna nome em agendamentos:', err.message);
   }
+  try {
+    await runSql('ALTER TABLE logs_execucao ADD COLUMN IF NOT EXISTS notas_existentes INTEGER DEFAULT 0');
+  } catch (err) {
+    console.error('Erro ao migrar coluna notas_existentes em logs_execucao:', err.message);
+  }
   await criarMasterSeNaoExistir();
 }
 
@@ -417,16 +422,16 @@ async function deleteAgendamento(id) {
   await runSql('DELETE FROM agendamentos WHERE id = ?', [id]); 
 }
 
-async function registrarLogExecucao(data) { 
+async function registrarLogExecucao(data) {
   const res = await pool.query({
-    text: `INSERT INTO logs_execucao (agendamento_id, empresa_id, tipo, status, notas_encontradas, notas_inseridas, notas_enviadas, detalhes, duracao_ms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-    values: [data.agendamento_id || null, data.empresa_id || null, data.tipo, data.status, data.notas_encontradas || 0, data.notas_inseridas || 0, data.notas_enviadas || 0, data.detalhes || null, data.duracao_ms || 0]
+    text: `INSERT INTO logs_execucao (agendamento_id, empresa_id, tipo, status, notas_encontradas, notas_inseridas, notas_existentes, notas_enviadas, detalhes, duracao_ms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    values: [data.agendamento_id || null, data.empresa_id || null, data.tipo, data.status, data.notas_encontradas || 0, data.notas_inseridas || 0, data.notas_existentes || 0, data.notas_enviadas || 0, data.detalhes || null, data.duracao_ms || 0]
   });
   return res.rows[0].id;
 }
 async function updateLogExecucao(id, data) {
-  await runSql(`UPDATE logs_execucao SET status = COALESCE(?, status), notas_encontradas = COALESCE(?, notas_encontradas), notas_inseridas = COALESCE(?, notas_inseridas), notas_enviadas = COALESCE(?, notas_enviadas), detalhes = COALESCE(?, detalhes), duracao_ms = COALESCE(?, duracao_ms) WHERE id = ?`, 
-    [data.status !== undefined ? data.status : null, data.notas_encontradas !== undefined ? data.notas_encontradas : null, data.notas_inseridas !== undefined ? data.notas_inseridas : null, data.notas_enviadas !== undefined ? data.notas_enviadas : null, data.detalhes !== undefined ? data.detalhes : null, data.duracao_ms !== undefined ? data.duracao_ms : null, id]);
+  await runSql(`UPDATE logs_execucao SET status = COALESCE(?, status), notas_encontradas = COALESCE(?, notas_encontradas), notas_inseridas = COALESCE(?, notas_inseridas), notas_existentes = COALESCE(?, notas_existentes), notas_enviadas = COALESCE(?, notas_enviadas), detalhes = COALESCE(?, detalhes), duracao_ms = COALESCE(?, duracao_ms) WHERE id = ?`,
+    [data.status !== undefined ? data.status : null, data.notas_encontradas !== undefined ? data.notas_encontradas : null, data.notas_inseridas !== undefined ? data.notas_inseridas : null, data.notas_existentes !== undefined ? data.notas_existentes : null, data.notas_enviadas !== undefined ? data.notas_enviadas : null, data.detalhes !== undefined ? data.detalhes : null, data.duracao_ms !== undefined ? data.duracao_ms : null, id]);
 }
 async function getLogsExecucao({ agendamento_id, empresa_id, limite, tipo, status } = {}) {
   let where = []; let params = [];
