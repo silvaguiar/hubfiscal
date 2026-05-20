@@ -80,11 +80,10 @@ async function initialize() {
   } catch (err) {
     console.error('Erro ao migrar coluna permissoes em usuarios:', err.message);
   }
-  // Ao reiniciar: deleta logs interrompidos sem dados (0 notas = nenhuma info útil),
-  // e marca como falha os que tinham dados parciais para preservar as contagens
+  // Ao reiniciar: deleta logs sem dados úteis (0 notas), marca como falha os com dados parciais
   try {
     await runSql(
-      `DELETE FROM logs_execucao WHERE status IN ('executando', 'in_progress') AND COALESCE(notas_encontradas, 0) = 0 AND COALESCE(notas_enviadas, 0) = 0`
+      `DELETE FROM logs_execucao WHERE status IN ('executando', 'in_progress', 'failed') AND COALESCE(notas_encontradas, 0) = 0 AND COALESCE(notas_enviadas, 0) = 0 AND COALESCE(notas_inseridas, 0) = 0`
     );
     await runSql(
       `UPDATE logs_execucao SET status = 'failed', detalhes = COALESCE(detalhes, '') || '\n[Interrompido por reinício do servidor]' WHERE status IN ('executando', 'in_progress')`
