@@ -412,7 +412,7 @@ async function updateAgendamento(id, data) {
   const ag = await getAgendamentoById(id);
   if (!ag) throw new Error('Agendamento não encontrado');
   const empId = data.empresa_id !== undefined ? (parseInt(data.empresa_id) === 0 ? null : parseInt(data.empresa_id)) : ag.empresa_id;
-  await runSql(`UPDATE agendamentos SET empresa_id = COALESCE(?, empresa_id), tipo = COALESCE(?, tipo), nome = COALESCE(?, nome), ativo = COALESCE(?, ativo), dias_offset = COALESCE(?, dias_offset), cron_expressao = COALESCE(?, cron_expressao), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
+  await runSql(`UPDATE agendamentos SET empresa_id = ?, tipo = COALESCE(?, tipo), nome = COALESCE(?, nome), ativo = COALESCE(?, ativo), dias_offset = COALESCE(?, dias_offset), cron_expressao = COALESCE(?, cron_expressao), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [empId, data.tipo || null, data.nome !== undefined ? data.nome : null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, data.dias_offset !== undefined ? parseInt(data.dias_offset) : null, data.cron_expressao || null, id]);
   return await getAgendamentoById(id);
 }
