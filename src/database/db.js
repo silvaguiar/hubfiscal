@@ -243,10 +243,10 @@ async function insertNotas(notas, empresaId = null) {
   return count;
 }
 
-async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, pagina = 1, limite = 50 } = {}) {
+async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, dominioStatus, pagina = 1, limite = 50 } = {}) {
   let where = [];
   let params = [];
-  
+
   if (empresaId) { params.push(empresaId); where.push(`empresa_id = $${params.length}`); }
   if (tipo && tipo !== 'todos') { params.push(tipo); where.push(`tipo = $${params.length}`); }
   if (modelo && modelo !== 'todos') { params.push(modelo.toString()); where.push(`schema_type = $${params.length}`); }
@@ -258,6 +258,13 @@ async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, p
   }
   if (dataInicio) { params.push(dataInicio); where.push(`data_emissao >= $${params.length}`); }
   if (dataFim) { params.push(dataFim + 'T23:59:59'); where.push(`data_emissao <= $${params.length}`); }
+  if (dominioStatus) {
+    if (dominioStatus === 'pendente') {
+      where.push(`(dominio_status = 'pendente' OR dominio_status IS NULL)`);
+    } else {
+      params.push(dominioStatus); where.push(`dominio_status = $${params.length}`);
+    }
+  }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
   const offset = (pagina - 1) * limite;
@@ -550,6 +557,10 @@ async function updateGlobalTokens(data) {
   await runSql(`UPDATE configuracoes SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
 }
 
+async function limparLogsExecucao() {
+  await pool.query('DELETE FROM logs_execucao');
+}
+
 module.exports = {
-  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, resetarDominioEmpresa, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
+  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, resetarDominioEmpresa, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, limparLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
 };

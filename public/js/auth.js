@@ -115,15 +115,17 @@ const Auth = {
 
     // Oculta abas cujo módulo está com none
     const abas = {
-      notas:        document.querySelector('[data-page="notas"]'),
-      agendamentos: document.querySelector('[data-page="agendamentos"]'),
-      config:       document.querySelector('[data-page="config"]'),
-      dominio:      document.querySelector('[data-page="dominio"]'),
+      notas:          document.querySelector('[data-page="notas"]'),
+      importador_nfs: document.querySelector('[data-page="importador_nfs"]'),
+      agendamentos:   document.querySelector('[data-page="agendamentos"]'),
+      config:         document.querySelector('[data-page="config"]'),
+      dominio:        document.querySelector('[data-page="dominio"]'),
     };
-    if (abas.notas)        abas.notas.style.display        = this.temPermissao('notas', 'view')        ? '' : 'none';
-    if (abas.agendamentos) abas.agendamentos.style.display = this.temPermissao('agendamentos', 'view') ? '' : 'none';
-    if (abas.config)       abas.config.style.display       = this.temPermissao('empresas', 'view')     ? '' : 'none';
-    if (abas.dominio)      abas.dominio.style.display      = this.temPermissao('dominio', 'view')      ? '' : 'none';
+    if (abas.notas)          abas.notas.style.display          = this.temPermissao('notas', 'view')        ? '' : 'none';
+    if (abas.importador_nfs) abas.importador_nfs.style.display = this.temPermissao('totvs', 'view')        ? '' : 'none';
+    if (abas.agendamentos)   abas.agendamentos.style.display   = this.temPermissao('agendamentos', 'view') ? '' : 'none';
+    if (abas.config)         abas.config.style.display         = this.temPermissao('empresas', 'view')     ? '' : 'none';
+    if (abas.dominio)        abas.dominio.style.display        = this.temPermissao('dominio', 'view')      ? '' : 'none';
 
     // Oculta botões de ação marcados com data-perm="modulo:nivel"
     document.querySelectorAll('[data-perm]').forEach(el => {

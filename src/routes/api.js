@@ -173,10 +173,11 @@ module.exports = function (db, upload) {
 
   router.get('/notas', requireModulo('notas', 'view'), async (req, res) => {
     try {
-      const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo } = req.query;
+      const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo, dominioStatus } = req.query;
       const result = await db.getNotas({
         tipo, busca, modelo, dataInicio, dataFim,
         empresaId: empresaId ? parseInt(empresaId) : null,
+        dominioStatus: dominioStatus || null,
         pagina: parseInt(pagina) || 1,
         limite: parseInt(limite) || 50
       });
@@ -701,6 +702,14 @@ module.exports = function (db, upload) {
       } else {
         res.status(400).json({ error: 'Formato inválido. Use: csv, xlsx, json ou xml' });
       }
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Logs de Execução ──────────────────────────────
+  router.delete('/logs', requireModulo('agendamentos', 'manage'), async (req, res) => {
+    try {
+      await db.limparLogsExecucao();
+      res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 

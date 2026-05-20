@@ -267,6 +267,20 @@
             <span class="stat-label">Última Importação</span>
           </div>
         </div>
+        <div class="stat-card stat-entradas">
+          <div class="stat-icon"><span class="material-icons-round">cloud_done</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statDomIntegradas">0</span>
+            <span class="stat-label">Integradas (Domínio)</span>
+          </div>
+        </div>
+        <div class="stat-card stat-saidas" style="--stat-accent: #f59e0b">
+          <div class="stat-icon"><span class="material-icons-round">pending_actions</span></div>
+          <div class="stat-info">
+            <span class="stat-value" id="statDomPendentes">0</span>
+            <span class="stat-label">Pendentes (Domínio)</span>
+          </div>
+        </div>
       </div>
       <div class="card">
         <div class="card-header"><h3>Últimas Notas</h3></div>
@@ -307,6 +321,13 @@
           </select>
           <input type="date" id="filterDataInicio" class="input-field">
           <input type="date" id="filterDataFim" class="input-field">
+          <select id="filterDominioStatus" class="input-field">
+            <option value="">Status Domínio (todos)</option>
+            <option value="pendente">● Pendente</option>
+            <option value="enviando">⏳ Enviando</option>
+            <option value="enviado">✓ Enviado</option>
+            <option value="erro">✕ Erro</option>
+          </select>
           <input type="text" id="filterBusca" class="input-field search-input" placeholder="Buscar por NF, CNPJ, nome...">
           <button class="btn btn-primary" onclick="app.loadNotas()">
             <span class="material-icons-round">search</span>Filtrar
@@ -574,6 +595,9 @@
             </select>
             <button class="btn btn-secondary" style="padding:6px 14px;font-size:13px" onclick="app.carregarLogsAgendamentos()">
               <span class="material-icons-round" style="font-size:16px">refresh</span>Atualizar
+            </button>
+            <button class="btn" style="padding:6px 14px;font-size:13px;background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3)" data-perm="agendamentos:manage" onclick="app.limparHistoricoExecucoes()">
+              <span class="material-icons-round" style="font-size:16px">delete_sweep</span>Limpar Histórico
             </button>
           </div>
         </div>

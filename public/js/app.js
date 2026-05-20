@@ -148,9 +148,18 @@ const app = {
       document.getElementById('statSync').textContent = stats.ultimaImportacao
         ? this.formatDate(stats.ultimaImportacao) : '—';
 
-      const notasRes = await fetch('/api/notas?limite=10');
+      const [notasRes, domRes] = await Promise.all([
+        fetch('/api/notas?limite=10'),
+        fetch('/api/dominio/stats')
+      ]);
       const notasData = await notasRes.json();
       this.renderDashboardTable(notasData.notas);
+
+      const domStats = await domRes.json();
+      const elIntegradas = document.getElementById('statDomIntegradas');
+      const elPendentes  = document.getElementById('statDomPendentes');
+      if (elIntegradas) elIntegradas.textContent = domStats.enviadas ?? 0;
+      if (elPendentes)  elPendentes.textContent  = domStats.pendentes ?? 0;
     } catch (err) { console.error(err); }
   },
 
@@ -179,8 +188,12 @@ const app = {
     const busca = document.getElementById('filterBusca').value;
     const dataInicio = document.getElementById('filterDataInicio').value;
     const dataFim = document.getElementById('filterDataFim').value;
+    const empresaId = document.getElementById('filterEmpresa').value;
+    const dominioStatus = document.getElementById('filterDominioStatus')?.value || '';
 
     const params = new URLSearchParams({ tipo, busca, dataInicio, dataFim, pagina, limite: 50 });
+    if (empresaId) params.set('empresaId', empresaId);
+    if (dominioStatus) params.set('dominioStatus', dominioStatus);
 
     try {
       const res = await fetch(`/api/notas?${params}`);
@@ -1225,6 +1238,20 @@ const app = {
         </tr>`;
       }).join('');
     } catch (err) { console.error('Erro ao carregar logs:', err); }
+  },
+
+  async limparHistoricoExecucoes() {
+    if (!confirm('Tem certeza que deseja limpar todo o histórico de execuções?\nEsta ação não pode ser desfeita.')) return;
+    try {
+      const res = await fetch('/api/logs', { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.success) {
+        this.toast('Histórico de execuções limpo!', 'success');
+        this.carregarLogsAgendamentos();
+      } else {
+        this.toast(data.error || 'Erro ao limpar histórico', 'error');
+      }
+    } catch (err) { this.toast('Erro ao limpar histórico', 'error'); }
   },
 
   abrirModalAgendamento(id = null) {
