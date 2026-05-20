@@ -212,8 +212,8 @@ class TotvsService {
 
             if (parsed) {
               parsed.xml_completo = xmlContent;
-              parsed.tipo = 'saida';
-              
+              // tipo determinado pelo tpNF do XML (parseNFeXml) — não sobrescrever
+
               if (parsed.data_emissao && parsed.data_emissao.includes('T')) {
                 parsed.data_emissao = parsed.data_emissao.split('T')[0];
               }
@@ -422,7 +422,7 @@ class TotvsService {
           }
 
           parsed.xml_completo = xmlContent;
-          parsed.tipo = 'saida';
+          // tipo determinado pelo tpNF do XML (parseNFeXml) — não sobrescrever
           if (parsed.data_emissao && parsed.data_emissao.includes('T')) {
             parsed.data_emissao = parsed.data_emissao.split('T')[0];
           }

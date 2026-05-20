@@ -80,12 +80,19 @@ function parseNFeXml(xmlContent, cnpjProprio) {
 
     const emitCnpj = (emit['CNPJ'] || emit['CPF'] || '').toString();
     const destCnpj = (dest['CNPJ'] || dest['CPF'] || '').toString();
-    const cnpjLimpo = cnpjProprio.replace(/\D/g, '');
+    const cnpjLimpo = cnpjProprio ? cnpjProprio.replace(/\D/g, '') : '';
 
-    // Determine if it's entrada or saida
-    let tipo = 'entrada';
-    if (emitCnpj === cnpjLimpo) {
+    // tpNF é o campo definitivo da NF-e: 0=entrada, 1=saída
+    // Resolve corretamente emissões próprias de entrada (devoluções, CFOP 1.xxx/2.xxx)
+    const tpNF = ide['tpNF'] !== undefined ? String(ide['tpNF']) : null;
+    let tipo;
+    if (tpNF === '0') {
+      tipo = 'entrada';
+    } else if (tpNF === '1') {
       tipo = 'saida';
+    } else {
+      // Fallback quando tpNF não está disponível
+      tipo = (cnpjLimpo && emitCnpj === cnpjLimpo) ? 'saida' : 'entrada';
     }
 
     // Extract chave de acesso
