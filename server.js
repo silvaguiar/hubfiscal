@@ -59,6 +59,11 @@ const scheduler = new Scheduler(db);
   }
 })();
 
+// ── Keep-alive endpoint (público, sem autenticação) ────────────
+app.get('/ping', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), ts: new Date().toISOString() });
+});
+
 // ── Auth Routes (públicas) ──────────────────────────────────────
 const authRoutes = require('./src/routes/auth.routes');
 app.use('/api/auth', authRoutes(db));
@@ -104,6 +109,26 @@ process.on('SIGINT',  () => { if (scheduler && typeof scheduler.parar === 'funct
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`\n🟢 HubFiscal rodando em http://localhost:${PORT}\n`);
+
+    // Auto-ping para evitar standby no Render free tier
+    // Funciona enquanto o processo estiver vivo; complemente com UptimeRobot externamente
+    if (!process.env.VERCEL) {
+      const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+      if (keepAliveUrl) {
+        const client = keepAliveUrl.startsWith('https') ? require('https') : require('http');
+        const PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
+        setInterval(() => {
+          client.get(`${keepAliveUrl}/ping`, (res) => {
+            console.log(`💓 Keep-alive ping → ${res.statusCode}`);
+          }).on('error', (err) => {
+            console.warn(`⚠️ Keep-alive ping falhou: ${err.message}`);
+          });
+        }, PING_INTERVAL_MS);
+        console.log(`💓 Keep-alive ativo → ${keepAliveUrl}/ping (a cada 10 min)`);
+      } else {
+        console.log('ℹ️ Keep-alive desabilitado: defina RENDER_EXTERNAL_URL ou APP_URL no ambiente.');
+      }
+    }
   });
 }
 
