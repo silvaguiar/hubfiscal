@@ -119,13 +119,17 @@ class PortalNfseClient {
       let resp;
       try {
         resp = await this._get(`/contribuintes/DFe/${nsuAtual}`);
+        console.log(`[NFS-e] DFe/${nsuAtual} response keys:`, Object.keys(resp || {}));
+        console.log(`[NFS-e] DFe/${nsuAtual} raw (200 chars):`, JSON.stringify(resp).substring(0, 200));
       } catch (err) {
+        console.log(`[NFS-e] DFe/${nsuAtual} erro HTTP ${err.response?.status}: ${err.message}`);
         // 404 = sem mais documentos
         if (err.response?.status === 404) break;
         throw err;
       }
 
-      const lista = resp.DFe || resp.dfe || resp.lista || resp.items || resp.data || [];
+      const lista = resp.DFe || resp.dfe || resp.lista || resp.items || resp.data || resp.documentos || [];
+      console.log(`[NFS-e] DFe/${nsuAtual} lista encontrada: ${lista.length} itens`);
       if (!Array.isArray(lista) || lista.length === 0) break;
 
       for (const item of lista) {
