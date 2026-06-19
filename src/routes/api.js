@@ -712,6 +712,20 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).send(err.message); }
   });
 
+  // Retorna primeiros 600 chars do xml_completo de uma nota (diagnóstico)
+  router.get('/nfse/debug-xml', async (req, res) => {
+    try {
+      const { chave } = req.query;
+      const nota = await db.getNotaByChave(chave);
+      if (!nota) return res.status(404).json({ error: 'não encontrada' });
+      res.json({
+        chave: nota.chave_acesso,
+        xml_len: (nota.xml_completo || '').length,
+        xml_preview: (nota.xml_completo || '').substring(0, 600)
+      });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   // Reprocessa xml_completo das NFS-e já salvas (corrige campos vazios após fix de parser)
   router.post('/nfse/reprocessar', requireModulo('notas', 'create'), async (req, res) => {
     try {
@@ -751,7 +765,7 @@ module.exports = function (db, upload) {
         }
         try {
           const doc = xmlParser.parse(row.xml_completo);
-          const rootKey = Object.keys(doc).find(k => k.includes('NFSe')) || Object.keys(doc)[0];
+          const rootKey = Object.keys(doc).find(k => k.toLowerCase().includes('nfse') || k.toLowerCase().includes('compnf')) || Object.keys(doc).find(k => k !== '?xml') || Object.keys(doc)[0];
           const root = doc[rootKey] || {};
           const infNFSe = root.infNFSe || {};
           const infDPS  = infNFSe?.DPS?.infDPS || {};
