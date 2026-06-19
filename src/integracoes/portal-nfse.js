@@ -66,6 +66,12 @@ class PortalNfseClient {
       const xml = this._descomprimirXml(item.ArquivoXml || '');
       const doc = xmlParser.parse(xml);
 
+      // Ignora eventos (cancelamento, substituição, etc.) — não são NFS-e
+      if (doc.evento || doc.retEvento || doc.procEvento) {
+        if (logFn) logFn(`[debug] Evento ignorado NSU ${nsu} (chave: ${chave.substring(0, 20)}...)`);
+        return null;
+      }
+
       // Estrutura NFS-e Nacional (novo padrão SPED - http://www.sped.fazenda.gov.br/nfse)
       const infNFSe = doc?.NFSe?.infNFSe || {};
       const infDPS  = infNFSe?.DPS?.infDPS || {};
@@ -150,6 +156,7 @@ class PortalNfseClient {
         }
 
         const doc = this._normalize(item, log);
+        if (!doc) continue; // evento ou documento ignorado
 
         // Filtra por período
         if (doc.data_emissao) {

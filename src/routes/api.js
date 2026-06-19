@@ -765,9 +765,14 @@ module.exports = function (db, upload) {
         }
         try {
           const doc = xmlParser.parse(row.xml_completo);
-          const rootKey = Object.keys(doc).find(k => k.toLowerCase().includes('nfse') || k.toLowerCase().includes('compnf')) || Object.keys(doc).find(k => k !== '?xml') || Object.keys(doc)[0];
-          const root = doc[rootKey] || {};
-          const infNFSe = root.infNFSe || {};
+          // Evento (cancelamento, substituição) — não é NFS-e, deleta do banco
+          if (doc.evento || doc.retEvento || doc.procEvento) {
+            await db.runSql('DELETE FROM notas_fiscais WHERE id = ?', [row.id]);
+            falhas.push({ chave: row.chave_acesso, motivo: 'evento deletado (não é NFS-e)' });
+            continue;
+          }
+
+          const infNFSe = doc?.NFSe?.infNFSe || {};
           const infDPS  = infNFSe?.DPS?.infDPS || {};
           const emit    = infNFSe?.emit || infDPS?.prest || {};
           const toma    = infDPS?.toma || {};
@@ -776,12 +781,6 @@ module.exports = function (db, upload) {
           const cnpjEmit = String(emit.CNPJ || '').replace(/\D/g, '');
           const tipo = cnpjEmit === (cnpjMap[row.empresa_id] || '') ? 'saida' : 'entrada';
           const valor = parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0);
-
-          if (!infNFSe.nNFSe && !infDPS.nDPS && valor === 0) {
-            const allKeys = Object.keys(doc).join(',');
-            const xmlPreview = row.xml_completo.substring(0, 300);
-            falhas.push({ chave: row.chave_acesso, motivo: `doc keys: ${allKeys}`, xmlPreview });
-          }
 
           await db.runSql(
             `UPDATE notas_fiscais SET
