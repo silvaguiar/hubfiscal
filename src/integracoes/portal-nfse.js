@@ -164,6 +164,18 @@ class PortalNfseClient {
         const nsuItem = parseInt(item.NSU || 0);
         if (nsuItem > nsuAtual) nsuAtual = nsuItem;
 
+        // Log da estrutura XML do primeiro doc para diagnóstico
+        if (documentos.length === 0 && lote.indexOf(item) === 0) {
+          try {
+            const xmlRaw = this._descomprimirXml(item.ArquivoXml || '');
+            const docParsed = xmlParser.parse(xmlRaw);
+            log(`[debug] XML root keys: ${Object.keys(docParsed).join(', ')}`);
+            const rootKey = Object.keys(docParsed)[0];
+            log(`[debug] XML[${rootKey}] keys: ${Object.keys(docParsed[rootKey] || {}).join(', ')}`);
+            log(`[debug] XML raw (500): ${xmlRaw.substring(0, 500)}`);
+          } catch (e) { log(`[debug] Erro ao logar XML: ${e.message}`); }
+        }
+
         const doc = this._normalize(item, log);
 
         // Filtra por período
