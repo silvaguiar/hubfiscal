@@ -107,12 +107,13 @@ class PortalNfseService {
       if (i < empresas.length - 1) await new Promise(r => setTimeout(r, 1500));
     }
 
-    const detalhes = JSON.stringify({ dataInicio, dataFim, totalEncontradas, totalSalvas, resultados });
+    // Mantém o log de texto completo (com linhas [debug]) e embute o resumo no final
+    this.writeLog(`🏁 RESULTADO:${JSON.stringify({ dataInicio, dataFim, totalEncontradas, totalSalvas, resultados })}`);
     await this.db.updateLogExecucao(this.logId, {
       status: 'sucesso',
       notas_encontradas: totalEncontradas,
       notas_inseridas: totalSalvas,
-      detalhes,
+      detalhes: this.logBuffer,
       duracao_ms: Date.now() - inicio
     });
 
