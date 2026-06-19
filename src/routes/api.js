@@ -764,7 +764,9 @@ module.exports = function (db, upload) {
           const valor = parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0);
 
           if (!infNFSe.nNFSe && !infDPS.nDPS && valor === 0) {
-            falhas.push({ chave: row.chave_acesso, motivo: `root key: ${rootKey}, infNFSe keys: ${Object.keys(infNFSe).join(',')}` });
+            const allKeys = Object.keys(doc).join(',');
+            const xmlPreview = row.xml_completo.substring(0, 300);
+            falhas.push({ chave: row.chave_acesso, motivo: `doc keys: ${allKeys}`, xmlPreview });
           }
 
           await db.runSql(
