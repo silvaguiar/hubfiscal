@@ -10,6 +10,7 @@ const app = {
 
     this.setupNavigation();
     this.setupCertUpload();
+    this.setupModalEmpresaListeners();
     this.loadConfig();
 
     const savedPage = localStorage.getItem('hubfiscal_page');
@@ -142,6 +143,43 @@ const app = {
           this.toast(data.error, 'error');
         }
       } catch (err) { this.toast('Erro no upload', 'error'); }
+    });
+  },
+
+  setupModalEmpresaListeners() {
+    const modalCertInput = document.getElementById('modalCertInput');
+    if (modalCertInput) {
+      modalCertInput.addEventListener('change', () => {
+        const file = modalCertInput.files[0];
+        if (file) document.getElementById('modalCertNome').textContent = file.name;
+      });
+    }
+
+    const totvsCheck = document.getElementById('modalTotvsAtivo');
+    if (totvsCheck) {
+      totvsCheck.addEventListener('change', (e) => {
+        document.getElementById('modalTotvsFields').style.display = e.target.checked ? 'block' : 'none';
+      });
+    }
+
+    const dominioCheck = document.getElementById('modalDominioAtivo');
+    if (dominioCheck) {
+      dominioCheck.addEventListener('change', (e) => {
+        document.getElementById('modalDominioFields').style.display = e.target.checked ? 'block' : 'none';
+      });
+    }
+
+    document.getElementsByName('modalTipo').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'filial') {
+          document.getElementById('modalMatrizGroup').style.display = 'block';
+          document.getElementById('modalCertSection').style.display = 'none';
+          this.loadMatrizesSelect();
+        } else {
+          document.getElementById('modalMatrizGroup').style.display = 'none';
+          document.getElementById('modalCertSection').style.display = 'block';
+        }
+      });
     });
   },
 
@@ -780,27 +818,6 @@ const app = {
       } catch (e) { console.error(e); }
     }
     
-    document.getElementById('modalTotvsAtivo').addEventListener('change', (e) => {
-      document.getElementById('modalTotvsFields').style.display = e.target.checked ? 'block' : 'none';
-    });
-
-    document.getElementById('modalDominioAtivo').addEventListener('change', (e) => {
-      document.getElementById('modalDominioFields').style.display = e.target.checked ? 'block' : 'none';
-    });
-
-    document.getElementsByName('modalTipo').forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        if (e.target.value === 'filial') {
-          document.getElementById('modalMatrizGroup').style.display = 'block';
-          document.getElementById('modalCertSection').style.display = 'none';
-          this.loadMatrizesSelect();
-        } else {
-          document.getElementById('modalMatrizGroup').style.display = 'none';
-          document.getElementById('modalCertSection').style.display = 'block';
-        }
-      });
-    });
-
     document.getElementById('modalEmpresa').classList.add('active');
   },
 
