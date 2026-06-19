@@ -35,13 +35,15 @@ class PortalNfseClient {
     return this._agent;
   }
 
-  async _getToken() {
+  async _getToken(logFn) {
     if (this._token && Date.now() < this._tokenExpiry) return this._token;
 
     const agent = this._createAgent();
-    // mTLS OAuth2: certificado no handshake TLS + grant_type client_credentials
+    const tokenUrl = `${this.baseUrl}/contribuintes/autenticacao/token`;
+    if (logFn) logFn(`[debug] POST token → ${tokenUrl}`);
+
     const resp = await axios.post(
-      `${this.baseUrl}/contribuintes/autenticacao/token`,
+      tokenUrl,
       'grant_type=client_credentials',
       {
         httpsAgent: agent,
@@ -50,19 +52,24 @@ class PortalNfseClient {
       }
     );
 
-    this._token = resp.data.access_token;
-    this._tokenExpiry = Date.now() + ((resp.data.expires_in || 3600) - 60) * 1000;
+    if (logFn) logFn(`[debug] Token resp keys: ${Object.keys(resp.data || {}).join(', ')}`);
+    this._token = resp.data.access_token || resp.data.token || resp.data.access_Token;
+    this._tokenExpiry = Date.now() + ((resp.data.expires_in || resp.data.expiresIn || 3600) - 60) * 1000;
+    if (logFn) logFn(`[debug] Token obtido: ${this._token ? 'sim' : 'NAO (campo não encontrado)'}`);
     return this._token;
   }
 
-  async _get(path, params = {}) {
-    const token = await this._getToken();
-    const resp = await axios.get(`${this.baseUrl}${path}`, {
+  async _get(path, params = {}, logFn) {
+    const token = await this._getToken(logFn);
+    const url = `${this.baseUrl}${path}`;
+    if (logFn) logFn(`[debug] GET ${url} params=${JSON.stringify(params)}`);
+    const resp = await axios.get(url, {
       httpsAgent: this._createAgent(),
       headers: { Authorization: `Bearer ${token}` },
       params,
       timeout: 30000
     });
+    if (logFn) logFn(`[debug] GET ${url} → status ${resp.status} | keys: ${Object.keys(resp.data || {}).join(', ')} | raw: ${JSON.stringify(resp.data).substring(0, 300)}`);
     return resp.data;
   }
 
@@ -107,8 +114,9 @@ class PortalNfseClient {
    * @param {string} dataFim     formato YYYY-MM-DD
    * @param {number} ultNsu      último NSU processado (default 0)
    */
-  async consultarTudo(dataInicio, dataFim, ultNsu = 0) {
-    console.log(`[NFS-e] CNPJ ${this.cnpj} | ${dataInicio} → ${dataFim} | ultNSU: ${ultNsu}`);
+  async consultarTudo(dataInicio, dataFim, ultNsu = 0, logFn) {
+    const log = logFn || (msg => console.log(msg));
+    log(`[NFS-e] CNPJ ${this.cnpj} | ${dataInicio} → ${dataFim} | ultNSU: ${ultNsu}`);
 
     const documentos = [];
     let nsuAtual = ultNsu;
@@ -118,18 +126,15 @@ class PortalNfseClient {
     while (true) {
       let resp;
       try {
-        resp = await this._get(`/contribuintes/DFe/${nsuAtual}`);
-        console.log(`[NFS-e] DFe/${nsuAtual} response keys:`, Object.keys(resp || {}));
-        console.log(`[NFS-e] DFe/${nsuAtual} raw (200 chars):`, JSON.stringify(resp).substring(0, 200));
+        resp = await this._get(`/contribuintes/DFe/${nsuAtual}`, {}, log);
       } catch (err) {
-        console.log(`[NFS-e] DFe/${nsuAtual} erro HTTP ${err.response?.status}: ${err.message}`);
-        // 404 = sem mais documentos
+        log(`[debug] DFe/${nsuAtual} erro HTTP ${err.response?.status}: ${err.message}`);
         if (err.response?.status === 404) break;
         throw err;
       }
 
       const lista = resp.DFe || resp.dfe || resp.lista || resp.items || resp.data || resp.documentos || [];
-      console.log(`[NFS-e] DFe/${nsuAtual} lista encontrada: ${lista.length} itens`);
+      log(`[debug] DFe/${nsuAtual} lista: ${lista.length} itens | keys: ${Object.keys(resp || {}).join(', ')}`);
       if (!Array.isArray(lista) || lista.length === 0) break;
 
       for (const item of lista) {

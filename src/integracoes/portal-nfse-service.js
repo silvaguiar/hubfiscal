@@ -81,7 +81,7 @@ class PortalNfseService {
           certificadoSenha: certSenha
         });
 
-        const documentos = await client.consultarTudo(dataInicio, dataFim);
+        const documentos = await client.consultarTudo(dataInicio, dataFim, 0, (msg) => this.writeLog(msg));
         totalEncontradas += documentos.length;
 
         let salvas = 0;
