@@ -562,7 +562,7 @@ const app = {
               }).join('');
               log.scrollTop = log.scrollHeight;
 
-              const isDone = logText.includes('🏁 RESULTADO:') || attempts > 200;
+              const isDone = logText.includes('##CONCLUIDO##') || attempts > 200;
               if (isDone) {
                 clearInterval(interval);
                 btn.disabled = false;

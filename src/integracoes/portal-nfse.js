@@ -66,66 +66,39 @@ class PortalNfseClient {
       const xml = this._descomprimirXml(item.ArquivoXml || '');
       const doc = xmlParser.parse(xml);
 
-      // Navega pela estrutura NFS-e nacional (pode variar)
-      const nfse = doc?.CompNfse?.Nfse?.InfNfse
-        || doc?.NFSe?.InfNfse
-        || doc?.InfNfse
-        || doc?.nfse?.infNfse
-        || {};
+      // Estrutura NFS-e Nacional (novo padrão SPED - http://www.sped.fazenda.gov.br/nfse)
+      const infNFSe = doc?.NFSe?.infNFSe || {};
+      const infDPS  = infNFSe?.DPS?.infDPS || {};
+      const emit    = infNFSe?.emit || infDPS?.prest || {};
+      const toma    = infDPS?.toma || {};
+      const dpsVal  = infDPS?.valores || {};
 
-      const prestador = nfse.PrestadorServico || nfse.prestador || {};
-      const tomador = nfse.TomadorServico || nfse.tomador || {};
-      const servico = nfse.Servico || nfse.servico || {};
-      const valores = servico.Valores || servico.valor || {};
-
-      const cnpjPrestador = String(
-        prestador?.IdentificacaoPrestador?.CpfCnpj?.Cnpj
-        || prestador?.cpfCnpj
-        || prestador?.Cnpj
-        || ''
-      ).replace(/\D/g, '');
-
-      const tipo = cnpjPrestador === this.cnpj ? 'saida' : 'entrada';
+      const cnpjEmit = String(emit.CNPJ || '').replace(/\D/g, '');
+      const tipo = cnpjEmit === this.cnpj ? 'saida' : 'entrada';
 
       return {
         chave_acesso: chave,
-        numero_nf: String(nfse.Numero || nfse.numero || ''),
-        serie: String(nfse.Serie || nfse.serie || '1'),
-        data_emissao: nfse.DataEmissao || nfse.dataEmissao || null,
-        valor_total: parseFloat(valores.ValorServicos || valores.valorServicos || 0),
-        emitente_cnpj: cnpjPrestador,
-        emitente_nome: String(prestador?.RazaoSocial || prestador?.razaoSocial || ''),
-        destinatario_cnpj: String(
-          tomador?.IdentificacaoTomador?.CpfCnpj?.Cnpj
-          || tomador?.cpfCnpj
-          || tomador?.Cnpj
-          || ''
-        ).replace(/\D/g, ''),
-        destinatario_nome: String(tomador?.RazaoSocial || tomador?.razaoSocial || ''),
+        numero_nf:   String(infNFSe.nNFSe || infDPS.nDPS || ''),
+        serie:       String(infDPS.serie || '1'),
+        data_emissao: infDPS.dhEmi || infNFSe.dhProc || null,
+        valor_total:  parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0),
+        emitente_cnpj: cnpjEmit,
+        emitente_nome: String(emit.xNome || emit.xFant || ''),
+        destinatario_cnpj: String(toma.CNPJ || '').replace(/\D/g, ''),
+        destinatario_nome: String(toma.xNome || ''),
         tipo,
-        situacao: 'autorizada',
+        situacao:    'autorizada',
         schema_type: 'nfse',
         nsu: nsu ? parseInt(nsu) : null,
         xml_completo: xml
       };
     } catch (err) {
       if (logFn) logFn(`[debug] Erro ao parsear NSU ${nsu}: ${err.message}`);
-      // Retorna com os dados mínimos disponíveis no envelope
       return {
-        chave_acesso: chave,
-        numero_nf: '',
-        serie: '1',
-        data_emissao: null,
-        valor_total: 0,
-        emitente_cnpj: '',
-        emitente_nome: '',
-        destinatario_cnpj: '',
-        destinatario_nome: '',
-        tipo: 'entrada',
-        situacao: 'autorizada',
-        schema_type: 'nfse',
-        nsu: nsu ? parseInt(nsu) : null,
-        xml_completo: ''
+        chave_acesso: chave, numero_nf: '', serie: '1', data_emissao: null, valor_total: 0,
+        emitente_cnpj: '', emitente_nome: '', destinatario_cnpj: '', destinatario_nome: '',
+        tipo: 'entrada', situacao: 'autorizada', schema_type: 'nfse',
+        nsu: nsu ? parseInt(nsu) : null, xml_completo: ''
       };
     }
   }

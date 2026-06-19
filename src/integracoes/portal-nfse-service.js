@@ -108,7 +108,7 @@ class PortalNfseService {
     }
 
     // Mantém o log de texto completo (com linhas [debug]) e embute o resumo no final
-    this.writeLog(`🏁 RESULTADO:${JSON.stringify({ dataInicio, dataFim, totalEncontradas, totalSalvas, resultados })}`);
+    this.writeLog(`##CONCLUIDO## ${JSON.stringify({ dataInicio, dataFim, totalEncontradas, totalSalvas, resultados })}`);
     await this.db.updateLogExecucao(this.logId, {
       status: 'sucesso',
       notas_encontradas: totalEncontradas,

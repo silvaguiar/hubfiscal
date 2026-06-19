@@ -712,6 +712,70 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).send(err.message); }
   });
 
+  // Reprocessa xml_completo das NFS-e já salvas (corrige campos vazios após fix de parser)
+  router.post('/nfse/reprocessar', requireModulo('notas', 'create'), async (req, res) => {
+    try {
+      const { XMLParser } = require('fast-xml-parser');
+      const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseTagValue: true });
+
+      const { empresaId } = req.body;
+      const notas = await db.getAllNotasForExport({
+        modelo: 'nfse',
+        empresaId: empresaId ? parseInt(empresaId) : undefined
+      });
+
+      // Carrega CNPJs das empresas envolvidas uma única vez
+      const empIds = [...new Set(notas.map(n => n.empresa_id).filter(Boolean))];
+      const cnpjMap = {};
+      for (const eid of empIds) {
+        const emp = await db.getEmpresaById(eid);
+        if (emp) cnpjMap[eid] = String(emp.cnpj).replace(/\D/g, '');
+      }
+
+      let atualizadas = 0, erros = 0;
+      for (const row of notas) {
+        if (!row.xml_completo) { erros++; continue; }
+        try {
+          const doc = xmlParser.parse(row.xml_completo);
+          const infNFSe = doc?.NFSe?.infNFSe || {};
+          const infDPS  = infNFSe?.DPS?.infDPS || {};
+          const emit    = infNFSe?.emit || infDPS?.prest || {};
+          const toma    = infDPS?.toma || {};
+          const dpsVal  = infDPS?.valores || {};
+
+          const cnpjEmit = String(emit.CNPJ || '').replace(/\D/g, '');
+          const tipo = cnpjEmit === (cnpjMap[row.empresa_id] || '') ? 'saida' : 'entrada';
+
+          await db.runSql(
+            `UPDATE notas_fiscais SET
+               numero_nf = ?, serie = ?, data_emissao = ?, valor_total = ?,
+               emitente_cnpj = ?, emitente_nome = ?,
+               destinatario_cnpj = ?, destinatario_nome = ?, tipo = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [
+              String(infNFSe.nNFSe || infDPS.nDPS || ''),
+              String(infDPS.serie || '1'),
+              infDPS.dhEmi || infNFSe.dhProc || null,
+              parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0),
+              cnpjEmit,
+              String(emit.xNome || emit.xFant || ''),
+              String(toma.CNPJ || '').replace(/\D/g, ''),
+              String(toma.xNome || ''),
+              tipo,
+              row.id
+            ]
+          );
+          atualizadas++;
+        } catch (e) { erros++; }
+      }
+
+      res.json({ ok: true, total: notas.length, atualizadas, erros });
+    } catch (err) {
+      console.error('Reprocessar NFS-e:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Exportação ───────────────────────────────────────
 
   router.get('/exportar/:formato', async (req, res) => {
