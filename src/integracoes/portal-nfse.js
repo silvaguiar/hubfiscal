@@ -1,14 +1,15 @@
 /**
- * Client REST para o Portal Nacional de NFS-e (Nota Fiscal de Serviço Eletrônica)
- * Autenticação via certificado A1 (.pfx) com OAuth2 client_credentials (mTLS)
- * Documentação: https://www.nfse.gov.br/EmissorNacional/
+ * Client REST para o Portal Nacional de NFS-e (ADN - Ambiente de Dados Nacional)
+ * Autenticação via certificado A1 (.pfx) com mTLS (RFC 8705)
+ * Documentação: https://adn.nfse.gov.br/docs/index.html
+ *               https://adn.producaorestrita.nfse.gov.br/contribuintes/docs/index.html
  */
 const axios = require('axios');
 const https = require('https');
 
 const BASE_URLS = {
-  producao: 'https://nfse.receita.fazenda.gov.br',
-  homologacao: 'https://hnfse.receita.fazenda.gov.br'
+  producao: 'https://adn.nfse.gov.br',
+  homologacao: 'https://adn.producaorestrita.nfse.gov.br'
 };
 
 class PortalNfseClient {
@@ -38,8 +39,9 @@ class PortalNfseClient {
     if (this._token && Date.now() < this._tokenExpiry) return this._token;
 
     const agent = this._createAgent();
+    // mTLS OAuth2: certificado no handshake TLS + grant_type client_credentials
     const resp = await axios.post(
-      `${this.baseUrl}/autenticacao/token`,
+      `${this.baseUrl}/contribuintes/autenticacao/token`,
       'grant_type=client_credentials',
       {
         httpsAgent: agent,
@@ -98,46 +100,65 @@ class PortalNfseClient {
     };
   }
 
-  async _consultarPaginado(path, params, tipo) {
+  /**
+   * Baixa NFS-e via NSU (igual ao DF-e da NF-e SEFAZ).
+   * Filtra por CNPJ prestador/tomador e por período de data de emissão.
+   * @param {string} dataInicio  formato YYYY-MM-DD
+   * @param {string} dataFim     formato YYYY-MM-DD
+   * @param {number} ultNsu      último NSU processado (default 0)
+   */
+  async consultarTudo(dataInicio, dataFim, ultNsu = 0) {
+    console.log(`[NFS-e] CNPJ ${this.cnpj} | ${dataInicio} → ${dataFim} | ultNSU: ${ultNsu}`);
+
     const documentos = [];
-    let pagina = 1;
-    const totalPorPagina = 50;
+    let nsuAtual = ultNsu;
+    const inicio = new Date(dataInicio);
+    const fim = new Date(dataFim + 'T23:59:59');
 
     while (true) {
-      const resp = await this._get(path, { ...params, pagina, totalRegistros: totalPorPagina });
-      const lista = resp.nfse || resp.lista || resp.data || resp.items || [];
+      let resp;
+      try {
+        resp = await this._get(`/contribuintes/DFe/${nsuAtual}`);
+      } catch (err) {
+        // 404 = sem mais documentos
+        if (err.response?.status === 404) break;
+        throw err;
+      }
 
+      const lista = resp.DFe || resp.dfe || resp.lista || resp.items || resp.data || [];
       if (!Array.isArray(lista) || lista.length === 0) break;
 
-      for (const item of lista) documentos.push(this._normalize(item, tipo));
+      for (const item of lista) {
+        const nfse = item.nfse || item.NFSe || item;
+        const nsuItem = item.NSU || item.nsu || item.ultNSU;
+        if (nsuItem) nsuAtual = Math.max(nsuAtual, parseInt(nsuItem));
 
-      const totalPaginas = resp.totalPaginas || resp.paginacao?.totalPaginas;
-      if (!totalPaginas || pagina >= totalPaginas || lista.length < totalPorPagina) break;
-      pagina++;
+        // Detecta tipo pelo CNPJ
+        const cnpjPrestador = (nfse?.infNfse?.prestador?.cpfCnpj || nfse?.prestador?.cpfCnpj || '').replace(/\D/g, '');
+        const tipo = cnpjPrestador === this.cnpj ? 'saida' : 'entrada';
+
+        // Filtra por período
+        const dataEmissao = nfse?.infNfse?.dataHoraEmissao || nfse?.dataHoraEmissao || nfse?.dataEmissao;
+        if (dataEmissao) {
+          const d = new Date(dataEmissao);
+          if (d < inicio || d > fim) continue;
+        }
+
+        documentos.push(this._normalize(nfse, tipo));
+      }
+
+      // Verifica se há mais páginas via maxNSU/ultNSU retornados
+      const maxNSU = resp.maxNSU || resp.ultNSU || resp.NSUmax;
+      if (!maxNSU || nsuAtual >= parseInt(maxNSU)) break;
+
       await new Promise(r => setTimeout(r, 500));
     }
 
+    const emitidas = documentos.filter(d => d.tipo === 'saida');
+    const recebidas = documentos.filter(d => d.tipo === 'entrada');
+    console.log(`[NFS-e]   Emitidas: ${emitidas.length} | Recebidas: ${recebidas.length}`);
+
     return documentos;
-  }
-
-  async consultarTudo(dataInicio, dataFim) {
-    console.log(`[NFS-e] Consultando CNPJ ${this.cnpj} | ${dataInicio} → ${dataFim}`);
-
-    const emitidas = await this._consultarPaginado(
-      '/nfse/emitidas',
-      { cpfCnpj: this.cnpj, dataInicio, dataFim },
-      'saida'
-    );
-    console.log(`[NFS-e]   Emitidas: ${emitidas.length}`);
-
-    const recebidas = await this._consultarPaginado(
-      '/nfse/recebidas',
-      { cpfCnpj: this.cnpj, dataInicio, dataFim },
-      'entrada'
-    );
-    console.log(`[NFS-e]   Recebidas: ${recebidas.length}`);
-
-    return [...emitidas, ...recebidas];
   }
 }
 
