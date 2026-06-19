@@ -13,7 +13,7 @@ const BASE_URLS = {
   homologacao: 'https://adn.producaorestrita.nfse.gov.br'
 };
 
-const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseTagValue: true });
+const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseTagValue: true, removeNSPrefix: true });
 
 class PortalNfseClient {
   constructor({ cnpj, ambiente, certificadoBase64, certificadoSenha }) {

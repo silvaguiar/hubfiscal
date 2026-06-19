@@ -716,28 +716,44 @@ module.exports = function (db, upload) {
   router.post('/nfse/reprocessar', requireModulo('notas', 'create'), async (req, res) => {
     try {
       const { XMLParser } = require('fast-xml-parser');
-      const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseTagValue: true });
+      // removeNSPrefix: trata XML com namespace prefixado (ex: <ns2:NFSe>)
+      const xmlParser = new XMLParser({
+        ignoreAttributes: false, attributeNamePrefix: '@_',
+        parseTagValue: true, removeNSPrefix: true
+      });
 
-      const { empresaId } = req.body;
+      const { empresaId, chaves } = req.body;
       const notas = await db.getAllNotasForExport({
         modelo: 'nfse',
         empresaId: empresaId ? parseInt(empresaId) : undefined
       });
 
+      // Filtra por chaves específicas se informadas
+      const lista = chaves && chaves.length
+        ? notas.filter(n => chaves.includes(n.chave_acesso))
+        : notas;
+
       // Carrega CNPJs das empresas envolvidas uma única vez
-      const empIds = [...new Set(notas.map(n => n.empresa_id).filter(Boolean))];
+      const empIds = [...new Set(lista.map(n => n.empresa_id).filter(Boolean))];
       const cnpjMap = {};
       for (const eid of empIds) {
         const emp = await db.getEmpresaById(eid);
         if (emp) cnpjMap[eid] = String(emp.cnpj).replace(/\D/g, '');
       }
 
-      let atualizadas = 0, erros = 0;
-      for (const row of notas) {
-        if (!row.xml_completo) { erros++; continue; }
+      let atualizadas = 0;
+      const falhas = [];
+
+      for (const row of lista) {
+        if (!row.xml_completo) {
+          falhas.push({ chave: row.chave_acesso, motivo: 'xml_completo vazio' });
+          continue;
+        }
         try {
           const doc = xmlParser.parse(row.xml_completo);
-          const infNFSe = doc?.NFSe?.infNFSe || {};
+          const rootKey = Object.keys(doc).find(k => k.includes('NFSe')) || Object.keys(doc)[0];
+          const root = doc[rootKey] || {};
+          const infNFSe = root.infNFSe || {};
           const infDPS  = infNFSe?.DPS?.infDPS || {};
           const emit    = infNFSe?.emit || infDPS?.prest || {};
           const toma    = infDPS?.toma || {};
@@ -745,6 +761,11 @@ module.exports = function (db, upload) {
 
           const cnpjEmit = String(emit.CNPJ || '').replace(/\D/g, '');
           const tipo = cnpjEmit === (cnpjMap[row.empresa_id] || '') ? 'saida' : 'entrada';
+          const valor = parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0);
+
+          if (!infNFSe.nNFSe && !infDPS.nDPS && valor === 0) {
+            falhas.push({ chave: row.chave_acesso, motivo: `root key: ${rootKey}, infNFSe keys: ${Object.keys(infNFSe).join(',')}` });
+          }
 
           await db.runSql(
             `UPDATE notas_fiscais SET
@@ -756,7 +777,7 @@ module.exports = function (db, upload) {
               String(infNFSe.nNFSe || infDPS.nDPS || ''),
               String(infDPS.serie || '1'),
               infDPS.dhEmi || infNFSe.dhProc || null,
-              parseFloat(dpsVal?.vServPrest?.vServ || infNFSe?.valores?.vBC || 0),
+              valor,
               cnpjEmit,
               String(emit.xNome || emit.xFant || ''),
               String(toma.CNPJ || '').replace(/\D/g, ''),
@@ -766,10 +787,12 @@ module.exports = function (db, upload) {
             ]
           );
           atualizadas++;
-        } catch (e) { erros++; }
+        } catch (e) {
+          falhas.push({ chave: row.chave_acesso, motivo: e.message });
+        }
       }
 
-      res.json({ ok: true, total: notas.length, atualizadas, erros });
+      res.json({ ok: true, total: lista.length, atualizadas, falhas });
     } catch (err) {
       console.error('Reprocessar NFS-e:', err.message);
       res.status(500).json({ error: err.message });
