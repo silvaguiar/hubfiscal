@@ -554,11 +554,29 @@ const app = {
             const logRes = await fetch(`/api/nfse/logs${q}`);
             const logText = await logRes.text();
             if (logText && logText !== 'Aguardando início do processo...') {
-              const lines = logText.split('\n').filter(l => l.trim() !== '');
-              log.innerHTML = lines.slice(-20).map(l => `<div>${l}</div>`).join('');
+              // Detecta se o log final é JSON (resultado concluído) ou texto em andamento
+              let isDone = false;
+              try {
+                const parsed = JSON.parse(logText);
+                if (parsed.resultados !== undefined) {
+                  isDone = true;
+                  const r = parsed.resultados.map(r =>
+                    r.erro
+                      ? `<div style="color:#f87171">❌ ${r.empresa}: ${r.erro}</div>`
+                      : `<div>✅ ${r.empresa}: ${r.encontradas ?? 0} encontradas, ${r.salvas ?? 0} salvas.</div>`
+                  ).join('');
+                  log.innerHTML = `<div>🏁 Sincronização concluída — ${parsed.totalEncontradas} encontradas, ${parsed.totalSalvas} salvas.</div>${r}`;
+                }
+              } catch (e) {
+                // Log de texto em andamento
+                const lines = logText.split('\n').filter(l => l.trim() !== '');
+                log.innerHTML = lines.slice(-20).map(l => `<div>${l}</div>`).join('');
+                if (logText.includes('✅') && (logText.includes('salvas.') || logText.includes('empresa(s)'))) isDone = true;
+              }
+
               log.scrollTop = log.scrollHeight;
 
-              if (logText.includes('✅') && (logText.includes('salvas.') || logText.includes('empresa(s)')) || attempts > 200) {
+              if (isDone || attempts > 200) {
                 clearInterval(interval);
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-icons-round">travel_explore</span> Buscar NFS-e';
