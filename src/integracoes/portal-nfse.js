@@ -35,41 +35,17 @@ class PortalNfseClient {
     return this._agent;
   }
 
-  async _getToken(logFn) {
-    if (this._token && Date.now() < this._tokenExpiry) return this._token;
-
-    const agent = this._createAgent();
-    const tokenUrl = `${this.baseUrl}/contribuintes/autenticacao/token`;
-    if (logFn) logFn(`[debug] POST token → ${tokenUrl}`);
-
-    const resp = await axios.post(
-      tokenUrl,
-      'grant_type=client_credentials',
-      {
-        httpsAgent: agent,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 30000
-      }
-    );
-
-    if (logFn) logFn(`[debug] Token resp keys: ${Object.keys(resp.data || {}).join(', ')}`);
-    this._token = resp.data.access_token || resp.data.token || resp.data.access_Token;
-    this._tokenExpiry = Date.now() + ((resp.data.expires_in || resp.data.expiresIn || 3600) - 60) * 1000;
-    if (logFn) logFn(`[debug] Token obtido: ${this._token ? 'sim' : 'NAO (campo não encontrado)'}`);
-    return this._token;
-  }
-
+  // ADN usa mTLS puro: o certificado no TLS handshake é a autenticação,
+  // sem endpoint de token OAuth2 separado (mesmo padrão do SEFAZ NF-e).
   async _get(path, params = {}, logFn) {
-    const token = await this._getToken(logFn);
     const url = `${this.baseUrl}${path}`;
     if (logFn) logFn(`[debug] GET ${url} params=${JSON.stringify(params)}`);
     const resp = await axios.get(url, {
       httpsAgent: this._createAgent(),
-      headers: { Authorization: `Bearer ${token}` },
       params,
       timeout: 30000
     });
-    if (logFn) logFn(`[debug] GET ${url} → status ${resp.status} | keys: ${Object.keys(resp.data || {}).join(', ')} | raw: ${JSON.stringify(resp.data).substring(0, 300)}`);
+    if (logFn) logFn(`[debug] status ${resp.status} | keys: ${Object.keys(resp.data || {}).join(', ')} | raw: ${JSON.stringify(resp.data).substring(0, 300)}`);
     return resp.data;
   }
 
