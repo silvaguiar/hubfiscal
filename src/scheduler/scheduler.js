@@ -5,6 +5,7 @@
 const cron = require('node-cron');
 const { executarTotvsJob } = require('./jobs/totvs.job');
 const { executarDominioJob } = require('./jobs/dominio.job');
+const { executarPortalNfseJob } = require('./jobs/portal-nfse.job');
 
 class Scheduler {
   constructor(db) {
@@ -81,6 +82,8 @@ class Scheduler {
       return executarTotvsJob(this.db, agendamento);
     } else if (agendamento.tipo === 'dominio_envio') {
       return executarDominioJob(this.db, agendamento);
+    } else if (agendamento.tipo === 'portal_nfse') {
+      return executarPortalNfseJob(this.db, agendamento);
     } else {
       throw new Error(`Tipo de job desconhecido: ${agendamento.tipo}`);
     }

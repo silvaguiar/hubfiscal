@@ -62,6 +62,19 @@ function requireModulo(modulo, nivel) {
   };
 }
 
+/**
+ * Bloqueia operações de escrita se o cliente estiver suspenso ou cancelado.
+ * Master sempre passa. Usuários sem cliente_id (ex: admin master) também passam.
+ */
+function requireClienteAtivo(req, res, next) {
+  if (!req.usuario) return res.status(401).json({ error: 'Não autenticado.' });
+  if (req.usuario.perfil === 'master') return next();
+  const status = req.usuario.cliente_status;
+  if (status === 'suspenso') return res.status(403).json({ error: 'Conta suspensa. Verifique sua assinatura para continuar.' });
+  if (status === 'cancelado') return res.status(403).json({ error: 'Conta cancelada. Entre em contato com o suporte.' });
+  next();
+}
+
 function extrairToken(req) {
   // 1. Cookie httpOnly (preferencial)
   if (req.cookies && req.cookies.hubfiscal_token) return req.cookies.hubfiscal_token;
@@ -73,4 +86,4 @@ function extrairToken(req) {
   return null;
 }
 
-module.exports = { requireAuth, requirePerfil, requireModulo };
+module.exports = { requireAuth, requirePerfil, requireModulo, requireClienteAtivo };

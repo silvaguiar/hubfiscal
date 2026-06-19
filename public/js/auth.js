@@ -90,12 +90,19 @@ const Auth = {
     const cfg = perfilConfig[this.usuario.perfil] || perfilConfig.viewer;
     const initials = this.usuario.nome.split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('').toUpperCase();
 
+    const statusBadge = this.usuario.cliente_status === 'suspenso'
+      ? `<span style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.35);color:#fbbf24;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.4px;white-space:nowrap">⚠ CONTA SUSPENSA</span>`
+      : this.usuario.cliente_status === 'cancelado'
+      ? `<span style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.4px;white-space:nowrap">✕ CONTA CANCELADA</span>`
+      : '';
+
     el.innerHTML = `
       <div style="width:34px;height:34px;border-radius:50%;background:${cfg.grad};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;box-shadow:0 2px 10px ${cfg.color}55">${initials}</div>
       <div style="display:flex;flex-direction:column;line-height:1.25;margin-right:2px">
         <span style="font-size:13px;color:#e2e8f0;font-weight:500;white-space:nowrap">${this.usuario.nome}</span>
         <span style="font-size:10px;font-weight:700;color:${cfg.color};text-transform:uppercase;letter-spacing:.6px">${cfg.label}</span>
       </div>
+      ${statusBadge}
       <div style="width:1px;height:26px;background:rgba(255,255,255,.1);margin:0 2px"></div>
       <button onclick="Auth.logout()" title="Sair"
         style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);cursor:pointer;color:#f87171;padding:5px 12px;display:flex;align-items:center;gap:5px;border-radius:8px;font-size:12px;font-weight:600;white-space:nowrap;transition:all .2s;"

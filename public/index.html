@@ -207,6 +207,12 @@
       <a href="#" class="nav-item" data-page="usuarios">
         <span class="material-icons-round">manage_accounts</span>Usuários
       </a>
+      <a href="#" class="nav-item" data-page="clientes" data-master-only>
+        <span class="material-icons-round">groups</span>Clientes
+      </a>
+      <a href="#" class="nav-item" data-page="planos" data-master-only>
+        <span class="material-icons-round">workspace_premium</span>Planos
+      </a>
       <a href="#" class="nav-item" data-page="config">
         <span class="material-icons-round">settings</span>Configurações
       </a>
@@ -381,7 +387,7 @@
     <section class="page" id="page-importador_nfs">
       <div class="page-header">
         <h2>Importador de Notas Fiscais</h2>
-        <p class="page-subtitle">Central de importação: SEFAZ (Entradas), TOTVS (Saídas) e Manual</p>
+        <p class="page-subtitle">Central de importação: SEFAZ (Entradas), TOTVS (Saídas), Portal NFS-e e Manual</p>
       </div>
 
       <div class="import-grid-hub">
@@ -421,6 +427,33 @@
           <div id="totvsLogHub" class="totvs-log-terminal"></div>
           <button class="btn btn-primary w-full" onclick="app.dispararTotvsHub()">
             <span class="material-icons-round">bolt</span>Disparar Robô TOTVS
+          </button>
+        </div>
+
+        <!-- SEÇÃO: PORTAL NACIONAL NFS-e -->
+        <div class="card hub-card" style="border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.02)">
+          <div class="hub-card-header">
+            <span class="material-icons-round" style="color:#10b981">receipt_long</span>
+            <h3>Portal Nacional NFS-e</h3>
+          </div>
+          <p>Busca NFS-e emitidas e recebidas diretamente do portal federal da Receita Federal.</p>
+          <div class="form-group">
+            <label>Selecione a Empresa</label>
+            <select id="nfseEmpresaHub" class="input-field"></select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Data Início</label>
+              <input type="date" id="nfseDataInicioHub" class="input-field">
+            </div>
+            <div class="form-group">
+              <label>Data Fim</label>
+              <input type="date" id="nfseDataFimHub" class="input-field">
+            </div>
+          </div>
+          <div id="nfseLogHub" class="totvs-log-terminal"></div>
+          <button class="btn btn-primary w-full" style="background:var(--success,#10b981);border-color:var(--success,#10b981)" onclick="app.dispararNfseHub()">
+            <span class="material-icons-round">travel_explore</span>Buscar NFS-e
           </button>
         </div>
 
@@ -614,6 +647,7 @@
               <option value="">Todos os Tipos</option>
               <option value="totvs_sync">Sync TOTVS</option>
               <option value="dominio_envio">Envio Domínio</option>
+              <option value="portal_nfse">Portal NFS-e</option>
             </select>
             <select id="filterLogStatus" class="input-field" style="width:130px;height:32px;font-size:12px;padding:4px" onchange="app.carregarLogsAgendamentos()">
               <option value="">Todos os Status</option>
@@ -665,6 +699,7 @@
           <select id="modalAgTipo" class="input-field">
             <option value="totvs_sync">🔄 Sincronização TOTVS (puxar notas)</option>
             <option value="dominio_envio">📤 Envio ao Domínio (notas pendentes)</option>
+            <option value="portal_nfse">🧾 Portal Nacional NFS-e (buscar notas de serviço)</option>
           </select>
         </div>
         <div class="form-group" id="modalAgOffsetGroup">
@@ -832,9 +867,21 @@
             <button class="btn btn-secondary" data-master-only onclick="app.abrirModalDominioConfig()">
               <span class="material-icons-round">cloud_upload</span>Configurar Domínio Global
             </button>
-            <button class="btn btn-primary" onclick="app.abrirModalEmpresa()">
+            <button class="btn btn-primary" id="btnNovaEmpresa" onclick="app.abrirModalEmpresa()">
               <span class="material-icons-round">add_business</span>Nova Empresa
             </button>
+          </div>
+        </div>
+        <div id="empresaUsageBanner" style="display:none;margin-top:12px;padding:10px 14px;border-radius:10px;background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2);align-items:center;gap:12px">
+          <span class="material-icons-round" style="color:#818cf8;font-size:18px">business</span>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <span id="empresaUsageLabel" style="font-size:13px;color:#cbd5e1"></span>
+              <span id="empresaUsagePlano" style="font-size:11px;color:#818cf8;font-weight:600;text-transform:uppercase;letter-spacing:.5px"></span>
+            </div>
+            <div style="height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden">
+              <div id="empresaUsageBar" style="height:100%;border-radius:3px;background:linear-gradient(90deg,#6366f1,#818cf8);transition:width .4s ease"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -847,7 +894,154 @@
         </div>
       </div>
     </section>
+
+    <!-- ── Página Clientes ── -->
+    <section class="page" id="page-clientes">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">Clientes</h2>
+            <p class="page-subtitle" style="margin:4px 0 0">Contabilidades e empresas que usam o sistema</p>
+          </div>
+          <button class="btn btn-primary" onclick="app.abrirModalCliente()">
+            <span class="material-icons-round">person_add</span>Novo Cliente
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th><th>E-mail</th><th>Plano</th><th>Status</th><th>Empresas</th><th>Vencimento</th><th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="clientesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Página Planos ── -->
+    <section class="page" id="page-planos">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h2 style="margin:0">Planos</h2>
+            <p class="page-subtitle" style="margin:4px 0 0">Defina os pacotes e limites de cada contrato</p>
+          </div>
+          <button class="btn btn-primary" onclick="app.abrirModalPlano()">
+            <span class="material-icons-round">add</span>Novo Plano
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th><th>Descrição</th><th>Máx. Empresas</th><th>Preço Mensal</th><th>Status</th><th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="planosTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
+
+  <!-- Modal Plano -->
+  <div class="modal-overlay" id="modalPlano">
+    <div class="modal-empresa" style="max-width:440px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h3 style="margin:0" id="modalPlanoTitulo">Novo Plano</h3>
+        <button class="modal-close" onclick="document.getElementById('modalPlano').classList.remove('active')">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <input type="hidden" id="modalPlanoId">
+      <div class="form-group">
+        <label>Nome do Plano *</label>
+        <input type="text" id="modalPlanoNome" placeholder="Ex: Profissional">
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <input type="text" id="modalPlanoDescricao" placeholder="Breve descrição do plano">
+      </div>
+      <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Máx. Empresas</label>
+          <input type="number" id="modalPlanoMaxEmpresas" placeholder="-1 = ilimitado" min="-1">
+        </div>
+        <div class="form-group">
+          <label>Preço Mensal (R$)</label>
+          <input type="number" id="modalPlanoPreco" placeholder="0.00" step="0.01" min="0">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button class="btn btn-secondary" onclick="document.getElementById('modalPlano').classList.remove('active')">Cancelar</button>
+        <button class="btn btn-primary" onclick="app.salvarPlano()">Salvar Plano</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cliente -->
+  <div class="modal-overlay" id="modalCliente">
+    <div class="modal-empresa" style="max-width:520px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h3 style="margin:0" id="modalClienteTitulo">Novo Cliente</h3>
+        <button class="modal-close" onclick="document.getElementById('modalCliente').classList.remove('active')">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+      <input type="hidden" id="modalClienteId">
+      <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Nome *</label>
+          <input type="text" id="modalClienteNome" placeholder="Nome do cliente">
+        </div>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="modalClienteEmail" placeholder="contato@empresa.com">
+        </div>
+      </div>
+      <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Telefone</label>
+          <input type="text" id="modalClienteTelefone" placeholder="(11) 9xxxx-xxxx">
+        </div>
+        <div class="form-group">
+          <label>Plano</label>
+          <select id="modalClientePlano">
+            <option value="">Sem plano</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Status</label>
+          <select id="modalClienteStatus">
+            <option value="ativo">Ativo</option>
+            <option value="suspenso">Suspenso</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Vencimento</label>
+          <input type="date" id="modalClienteVencimento">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Observações</label>
+        <textarea id="modalClienteObs" rows="2" placeholder="Notas internas sobre este cliente" style="width:100%;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button class="btn btn-secondary" onclick="document.getElementById('modalCliente').classList.remove('active')">Cancelar</button>
+        <button class="btn btn-primary" onclick="app.salvarCliente()">Salvar Cliente</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal XML Viewer -->
   <div class="modal-overlay" id="xmlModal">
@@ -976,6 +1170,17 @@
             <input type="text" id="modalDominioIntegrationKey" class="input-field" placeholder="Insira a chave da empresa">
           </div>
         </div>
+      </div>
+
+      <!-- Portal Nacional NFS-e -->
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05)">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+          <input type="checkbox" id="modalNfseAtivo" style="width:18px; height:18px; accent-color:#10b981">
+          <label for="modalNfseAtivo" style="font-weight:600; cursor:pointer">Ativar Portal Nacional NFS-e</label>
+        </div>
+        <small style="color:var(--text-muted); font-size:11px; display:block; padding-left:26px">
+          ℹ️ Usa o certificado digital já cadastrado para buscar NFS-e emitidas e recebidas no portal federal.
+        </small>
       </div>
 
       <div style="display:flex;gap:10px;margin-top:20px">

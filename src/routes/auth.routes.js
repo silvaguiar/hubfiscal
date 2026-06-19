@@ -55,12 +55,21 @@ module.exports = function (db) {
       let permissoes = {};
       try { permissoes = typeof usuario.permissoes === 'string' ? JSON.parse(usuario.permissoes || '{}') : (usuario.permissoes || {}); } catch {}
 
+      let clienteId = usuario.cliente_id || null;
+      let clienteStatus = null;
+      if (clienteId) {
+        const cliente = await db.getClienteById(clienteId);
+        clienteStatus = cliente ? cliente.status : null;
+      }
+
       const payload = {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
         perfil: usuario.perfil,
-        permissoes
+        permissoes,
+        cliente_id: clienteId,
+        cliente_status: clienteStatus
       };
 
       const token = gerarToken(payload);
@@ -96,12 +105,33 @@ module.exports = function (db) {
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
     let permissoes = {};
     try { permissoes = typeof usuario.permissoes === 'string' ? JSON.parse(usuario.permissoes || '{}') : (usuario.permissoes || {}); } catch {}
+
+    let clienteId = usuario.cliente_id || null;
+    let clienteStatus = null;
+    let clienteNome = null;
+    let planoNome = null;
+    let maxEmpresas = null;
+    if (clienteId) {
+      const cliente = await db.getClienteById(clienteId);
+      if (cliente) {
+        clienteStatus = cliente.status;
+        clienteNome = cliente.nome;
+        planoNome = cliente.plano_nome;
+        maxEmpresas = cliente.plano_max_empresas !== null ? parseInt(cliente.plano_max_empresas) : null;
+      }
+    }
+
     res.json({
       id: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
       perfil: usuario.perfil,
-      permissoes
+      permissoes,
+      cliente_id: clienteId,
+      cliente_status: clienteStatus,
+      cliente_nome: clienteNome,
+      plano_nome: planoNome,
+      max_empresas: maxEmpresas
     });
   });
 

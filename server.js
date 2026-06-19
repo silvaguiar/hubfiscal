@@ -89,6 +89,10 @@ app.use('/api', apiRoutes(db, upload));
 const usersRoutes = require('./src/routes/users.routes');
 app.use('/api/usuarios', usersRoutes(db));
 
+// ── Admin Routes (planos e clientes — master only) ──────────────
+const adminRoutes = require('./src/routes/admin.routes');
+app.use('/api', adminRoutes(db));
+
 // ── Agendamentos Routes ─────────────────────────────────────────
 const agendamentosRoutes = require('./src/routes/agendamentos.routes');
 app.use('/api/agendamentos', agendamentosRoutes(db, scheduler));

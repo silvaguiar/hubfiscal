@@ -66,6 +66,12 @@ async function initialize() {
     console.error('Erro ao migrar colunas de tokens ou criar tabela de jobs TOTVS:', err.message);
   }
   try {
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS nfse_ativo INTEGER DEFAULT 0");
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS nfse_ultimo_sync TEXT");
+  } catch (err) {
+    console.error('Erro ao migrar colunas nfse em empresas:', err.message);
+  }
+  try {
     await runSql('ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS nome TEXT');
   } catch (err) {
     console.error('Erro ao migrar coluna nome em agendamentos:', err.message);
@@ -90,6 +96,51 @@ async function initialize() {
     );
   } catch (err) {
     console.error('Erro ao limpar logs travados:', err.message);
+  }
+  try {
+    await runSql(`CREATE TABLE IF NOT EXISTS planos (
+      id SERIAL PRIMARY KEY,
+      nome TEXT NOT NULL,
+      descricao TEXT,
+      max_empresas INTEGER NOT NULL DEFAULT 10,
+      preco_mensal DECIMAL(10,2),
+      ativo INTEGER DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await runSql(`CREATE TABLE IF NOT EXISTS clientes (
+      id SERIAL PRIMARY KEY,
+      nome TEXT NOT NULL,
+      email TEXT,
+      telefone TEXT,
+      plano_id INTEGER,
+      status TEXT DEFAULT 'ativo',
+      data_contratacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      data_vencimento TIMESTAMP,
+      observacoes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await runSql("ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cliente_id INTEGER");
+    await runSql("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cliente_id INTEGER");
+    const planosCount = await queryOne('SELECT COUNT(*) as count FROM planos');
+    if (!planosCount || parseInt(planosCount.count) === 0) {
+      await runSql(`INSERT INTO planos (nome, descricao, max_empresas, preco_mensal) VALUES (?, ?, ?, ?)`, ['Básico', 'Até 10 empresas', 10, 99.90]);
+      await runSql(`INSERT INTO planos (nome, descricao, max_empresas, preco_mensal) VALUES (?, ?, ?, ?)`, ['Profissional', 'Até 30 empresas', 30, 199.90]);
+      await runSql(`INSERT INTO planos (nome, descricao, max_empresas, preco_mensal) VALUES (?, ?, ?, ?)`, ['Premium', 'Empresas ilimitadas', -1, 399.90]);
+    }
+    let mioche = await queryOne("SELECT id FROM clientes WHERE nome = 'Mioche' LIMIT 1");
+    if (!mioche) {
+      const planoPremium = await queryOne("SELECT id FROM planos WHERE nome = 'Premium' LIMIT 1");
+      const res = await pool.query({ text: `INSERT INTO clientes (nome, status, plano_id) VALUES ($1, $2, $3) RETURNING id`, values: ['Mioche', 'ativo', planoPremium ? planoPremium.id : null] });
+      mioche = res.rows[0];
+    }
+    if (mioche) {
+      await runSql("UPDATE empresas SET cliente_id = ? WHERE cliente_id IS NULL", [mioche.id]);
+      await runSql("UPDATE usuarios SET cliente_id = ? WHERE cliente_id IS NULL AND perfil != 'master'", [mioche.id]);
+    }
+  } catch (err) {
+    console.error('Erro ao criar tabelas de multi-tenancy:', err.message);
   }
   await criarMasterSeNaoExistir();
 }
@@ -137,7 +188,10 @@ async function updateUltimoNSU(nsu, empresaId = null) {
   }
 }
 
-async function getEmpresas() { return await queryAll('SELECT * FROM empresas ORDER BY razao_social ASC'); }
+async function getEmpresas(clienteId = null) {
+  if (clienteId) return await queryAll('SELECT * FROM empresas WHERE cliente_id = ? ORDER BY razao_social ASC', [clienteId]);
+  return await queryAll('SELECT * FROM empresas ORDER BY razao_social ASC');
+}
 async function getMatrizes() { return await queryAll("SELECT id, cnpj, razao_social, nome_fantasia FROM empresas WHERE tipo = 'matriz' ORDER BY razao_social ASC"); }
 async function getEmpresaById(id) { return await queryOne('SELECT * FROM empresas WHERE id = ?', [id]); }
 async function getEmpresaByCnpj(cnpj) { return await queryOne('SELECT * FROM empresas WHERE cnpj = ?', [cnpj.replace(/\D/g, '')]); }
@@ -148,8 +202,8 @@ async function createEmpresa(data) {
   const tipo = data.tipo === 'filial' ? 'filial' : 'matriz';
   const matrizId = tipo === 'filial' && data.matriz_id ? parseInt(data.matriz_id) : null;
   await runSql(`
-    INSERT INTO empresas (cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_nome, certificado_senha, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo, dominio_client_id, dominio_client_secret, dominio_integration_key, dominio_ativo, dominio_auth_url, dominio_api_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO empresas (cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_nome, certificado_senha, totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo, dominio_client_id, dominio_client_secret, dominio_integration_key, dominio_ativo, dominio_auth_url, dominio_api_url, nfse_ativo, cliente_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [cnpj, data.razao_social || '', data.nome_fantasia || '', tipo, matrizId,
       data.uf || 'SP', data.ambiente || 'producao',
       data.certificado_nome || '', data.certificado_senha || '',
@@ -157,7 +211,9 @@ async function createEmpresa(data) {
       data.totvs_client_id || '', data.totvs_client_secret || '', data.totvs_branch || '',
       data.totvs_grant_type || 'password', (data.totvs_ativo === true || data.totvs_ativo === 'true' || data.totvs_ativo == 1) ? 1 : 0,
       data.dominio_client_id || '', data.dominio_client_secret || '', data.dominio_integration_key || '',
-      (data.dominio_ativo === true || data.dominio_ativo === 'true' || data.dominio_ativo == 1) ? 1 : 0, data.dominio_auth_url || '', data.dominio_api_url || '']);
+      (data.dominio_ativo === true || data.dominio_ativo === 'true' || data.dominio_ativo == 1) ? 1 : 0, data.dominio_auth_url || '', data.dominio_api_url || '',
+      (data.nfse_ativo === true || data.nfse_ativo === 'true' || data.nfse_ativo == 1) ? 1 : 0,
+      data.cliente_id ? parseInt(data.cliente_id) : null]);
   return await getEmpresaByCnpj(cnpj);
 }
 
@@ -176,7 +232,7 @@ async function updateEmpresa(id, data) {
       totvs_base_url = ?, totvs_user = ?, totvs_password = ?, totvs_token = ?, 
       totvs_client_id = ?, totvs_client_secret = ?, totvs_branch = ?, totvs_grant_type = ?, totvs_ativo = ?,
       dominio_client_id = ?, dominio_client_secret = ?, dominio_integration_key = ?, dominio_ativo = ?,
-      dominio_auth_url = ?, dominio_api_url = ?, updated_at = CURRENT_TIMESTAMP
+      dominio_auth_url = ?, dominio_api_url = ?, nfse_ativo = ?, cliente_id = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
     cnpj || existing.cnpj, data.razao_social !== undefined ? data.razao_social : existing.razao_social,
@@ -196,7 +252,10 @@ async function updateEmpresa(id, data) {
     data.dominio_integration_key !== undefined ? data.dominio_integration_key : existing.dominio_integration_key,
     data.dominio_ativo !== undefined ? ((data.dominio_ativo === true || data.dominio_ativo === 'true' || data.dominio_ativo == 1) ? 1 : 0) : existing.dominio_ativo,
     data.dominio_auth_url !== undefined ? data.dominio_auth_url : existing.dominio_auth_url,
-    data.dominio_api_url !== undefined ? data.dominio_api_url : existing.dominio_api_url, id
+    data.dominio_api_url !== undefined ? data.dominio_api_url : existing.dominio_api_url,
+    data.nfse_ativo !== undefined ? ((data.nfse_ativo === true || data.nfse_ativo === 'true' || data.nfse_ativo == 1) ? 1 : 0) : existing.nfse_ativo,
+    data.cliente_id !== undefined ? (data.cliente_id ? parseInt(data.cliente_id) : null) : existing.cliente_id,
+    id
   ]);
   return await getEmpresaById(id);
 }
@@ -418,12 +477,15 @@ async function criarMasterSeNaoExistir() {
   } catch (e) { console.error('⚠️ Erro ao criar usuário master:', e.message); }
 }
 
-async function getUsuarios() { return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at, permissoes FROM usuarios ORDER BY perfil ASC, nome ASC'); }
+async function getUsuarios(clienteId = null) {
+  if (clienteId) return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at, permissoes FROM usuarios WHERE cliente_id = ? ORDER BY perfil ASC, nome ASC', [clienteId]);
+  return await queryAll('SELECT id, nome, email, perfil, ativo, ultimo_login, created_at, permissoes FROM usuarios ORDER BY perfil ASC, nome ASC');
+}
 async function getUsuarioById(id) { return await queryOne('SELECT * FROM usuarios WHERE id = ?', [id]); }
 async function getUsuarioByEmail(email) { return await queryOne('SELECT * FROM usuarios WHERE email = ? AND ativo = 1', [email.toLowerCase()]); }
 async function createUsuario(data) {
   const perm = data.permissoes ? (typeof data.permissoes === 'object' ? JSON.stringify(data.permissoes) : data.permissoes) : '{}';
-  await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, permissoes) VALUES (?, ?, ?, ?, 1, ?)`, [data.nome, data.email, data.senha_hash, data.perfil || 'admin', perm]);
+  await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo, permissoes, cliente_id) VALUES (?, ?, ?, ?, 1, ?, ?)`, [data.nome, data.email, data.senha_hash, data.perfil || 'admin', perm, data.cliente_id ? parseInt(data.cliente_id) : null]);
   return await getUsuarioByEmail(data.email);
 }
 async function updateUsuario(id, data) {
@@ -561,6 +623,82 @@ async function limparLogsExecucao() {
   await pool.query('DELETE FROM logs_execucao');
 }
 
+// ── PLANOS ──────────────────────────────────────────────────────────────────
+async function getPlanos() { return await queryAll('SELECT * FROM planos ORDER BY max_empresas ASC'); }
+async function getPlanoById(id) { return await queryOne('SELECT * FROM planos WHERE id = ?', [id]); }
+async function createPlano(data) {
+  const result = await pool.query({
+    text: `INSERT INTO planos (nome, descricao, max_empresas, preco_mensal, ativo) VALUES ($1, $2, $3, $4, 1) RETURNING *`,
+    values: [data.nome, data.descricao || null, parseInt(data.max_empresas) || 10, data.preco_mensal ? parseFloat(data.preco_mensal) : null]
+  });
+  return result.rows[0];
+}
+async function updatePlano(id, data) {
+  const p = await getPlanoById(id);
+  if (!p) throw new Error('Plano não encontrado');
+  await runSql(`UPDATE planos SET nome = COALESCE(?, nome), descricao = COALESCE(?, descricao), max_empresas = COALESCE(?, max_empresas), preco_mensal = COALESCE(?, preco_mensal), ativo = COALESCE(?, ativo), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [data.nome || null, data.descricao !== undefined ? data.descricao : null, data.max_empresas !== undefined ? parseInt(data.max_empresas) : null, data.preco_mensal !== undefined ? parseFloat(data.preco_mensal) : null, data.ativo !== undefined ? ((data.ativo === true || data.ativo === 'true' || data.ativo == 1) ? 1 : 0) : null, id]);
+  return await getPlanoById(id);
+}
+async function deletePlano(id) { await runSql('DELETE FROM planos WHERE id = ?', [id]); }
+
+// ── CLIENTES ─────────────────────────────────────────────────────────────────
+async function getClientes() {
+  return await queryAll(`
+    SELECT c.*, p.nome as plano_nome, p.max_empresas as plano_max_empresas,
+           COUNT(DISTINCT e.id)::int as total_empresas,
+           COUNT(DISTINCT u.id)::int as total_usuarios
+    FROM clientes c
+    LEFT JOIN planos p ON p.id = c.plano_id
+    LEFT JOIN empresas e ON e.cliente_id = c.id
+    LEFT JOIN usuarios u ON u.cliente_id = c.id
+    GROUP BY c.id, p.nome, p.max_empresas
+    ORDER BY c.nome ASC
+  `);
+}
+async function getClienteById(id) {
+  return await queryOne(`
+    SELECT c.*, p.nome as plano_nome, p.max_empresas as plano_max_empresas
+    FROM clientes c
+    LEFT JOIN planos p ON p.id = c.plano_id
+    WHERE c.id = ?
+  `, [id]);
+}
+async function createCliente(data) {
+  const result = await pool.query({
+    text: `INSERT INTO clientes (nome, email, telefone, plano_id, status, data_vencimento, observacoes) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    values: [data.nome, data.email || null, data.telefone || null, data.plano_id ? parseInt(data.plano_id) : null, data.status || 'ativo', data.data_vencimento || null, data.observacoes || null]
+  });
+  return result.rows[0];
+}
+async function updateCliente(id, data) {
+  const c = await getClienteById(id);
+  if (!c) throw new Error('Cliente não encontrado');
+  await runSql(`UPDATE clientes SET nome = COALESCE(?, nome), email = COALESCE(?, email), telefone = COALESCE(?, telefone), plano_id = COALESCE(?, plano_id), status = COALESCE(?, status), data_vencimento = COALESCE(?, data_vencimento), observacoes = COALESCE(?, observacoes), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [data.nome || null, data.email !== undefined ? data.email : null, data.telefone !== undefined ? data.telefone : null, data.plano_id !== undefined ? (data.plano_id ? parseInt(data.plano_id) : null) : null, data.status || null, data.data_vencimento !== undefined ? data.data_vencimento : null, data.observacoes !== undefined ? data.observacoes : null, id]);
+  return await getClienteById(id);
+}
+async function deleteCliente(id) {
+  await runSql('UPDATE empresas SET cliente_id = NULL WHERE cliente_id = ?', [id]);
+  await runSql('UPDATE usuarios SET cliente_id = NULL WHERE cliente_id = ?', [id]);
+  await runSql('DELETE FROM clientes WHERE id = ?', [id]);
+}
+async function getClienteUso(id) {
+  const cliente = await getClienteById(id);
+  if (!cliente) return null;
+  const uso = await queryOne('SELECT COUNT(*) as count FROM empresas WHERE cliente_id = ?', [id]);
+  return {
+    cliente_id: id,
+    nome: cliente.nome,
+    status: cliente.status,
+    total_empresas: parseInt(uso ? uso.count : 0),
+    max_empresas: cliente.plano_max_empresas !== null ? parseInt(cliente.plano_max_empresas) : 10,
+    plano_nome: cliente.plano_nome
+  };
+}
+
 module.exports = {
-  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, resetarDominioEmpresa, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, limparLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens
+  initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, resetarDominioEmpresa, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, limparLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens,
+  getPlanos, getPlanoById, createPlano, updatePlano, deletePlano,
+  getClientes, getClienteById, createCliente, updateCliente, deleteCliente, getClienteUso
 };

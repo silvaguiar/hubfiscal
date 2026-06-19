@@ -19,6 +19,14 @@ const app = {
       this.loadDashboard();
     }
     this.loadEmpresas(); // Preenche os selects (filtros) das outras telas
+    // Datas padrão do card NFS-e: 1º do mês atual → hoje
+    const hoje = new Date();
+    const yyyyMM = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    const yyyyMMDD = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const el1 = document.getElementById('nfseDataInicioHub');
+    const el2 = document.getElementById('nfseDataFimHub');
+    if (el1) el1.value = `${yyyyMM}-01`;
+    if (el2) el2.value = yyyyMMDD(hoje);
     const menuToggle = document.getElementById('menuToggle');
     if (menuToggle) {
       menuToggle.addEventListener('click', () => {
@@ -65,6 +73,8 @@ const app = {
     if (page === 'dominio')      this.loadDominioPage();
     if (page === 'agendamentos') this.carregarAgendamentos();
     if (page === 'usuarios')     this.carregarUsuarios();
+    if (page === 'clientes')     this.loadClientes();
+    if (page === 'planos')       this.loadPlanos();
   },
 
   // ── Config ────────────────────────────────────────
@@ -467,6 +477,73 @@ const app = {
     }
   },
 
+  async dispararNfseHub() {
+    const empresaId = document.getElementById('nfseEmpresaHub').value;
+    const dataInicio = document.getElementById('nfseDataInicioHub').value;
+    const dataFim = document.getElementById('nfseDataFimHub').value;
+    const log = document.getElementById('nfseLogHub');
+    const btn = document.querySelector('#page-importador_nfs [onclick="app.dispararNfseHub()"]');
+
+    if (!dataInicio || !dataFim) return this.toast('Selecione o período (data início e fim)', 'error');
+    if (dataInicio > dataFim) return this.toast('Data início não pode ser maior que data fim', 'error');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-radius:50%;border-top-color:transparent;animation:spin 1s linear infinite;margin-right:8px"></span> Buscando...';
+
+    log.style.display = 'block';
+    log.innerHTML = '<div>Iniciando busca no Portal Nacional NFS-e...</div>';
+
+    try {
+      const endpoint = empresaId ? '/api/nfse/sincronizar' : '/api/nfse/sincronizar-todas';
+      const body = empresaId ? { empresaId, dataInicio, dataFim } : { dataInicio, dataFim };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        log.innerHTML += `<div>${data.message}</div>`;
+        this.toast('Busca iniciada!', 'info');
+
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          try {
+            attempts++;
+            const q = empresaId ? `?empresaId=${empresaId}` : '';
+            const logRes = await fetch(`/api/nfse/logs${q}`);
+            const logText = await logRes.text();
+            if (logText && logText !== 'Aguardando início do processo...') {
+              const lines = logText.split('\n').filter(l => l.trim() !== '');
+              log.innerHTML = lines.slice(-20).map(l => `<div>${l}</div>`).join('');
+              log.scrollTop = log.scrollHeight;
+
+              if (logText.includes('✅') && (logText.includes('salvas.') || logText.includes('empresa(s)')) || attempts > 200) {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-icons-round">travel_explore</span> Buscar NFS-e';
+                this.loadDashboard();
+              }
+            }
+          } catch (e) {}
+        }, 3000);
+
+      } else {
+        log.innerHTML += `<div style="color:#f87171">Erro: ${data.error}</div>`;
+        this.toast(data.error || 'Erro ao iniciar busca', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-icons-round">travel_explore</span> Buscar NFS-e';
+      }
+    } catch (err) {
+      log.innerHTML += `<div style="color:#f87171">Erro de conexão: ${err.message}</div>`;
+      this.toast('Erro ao comunicar com o servidor', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-icons-round">travel_explore</span> Buscar NFS-e';
+    }
+  },
+
   async importarManualHub(event) {
     const files = event.target.files;
     if (!files.length) return;
@@ -559,7 +636,32 @@ const app = {
       const res = await fetch('/api/empresas');
       const empresas = await res.json();
       const grid = document.getElementById('empresasGrid');
-      
+
+      // Usage bar for non-master users
+      const u = Auth.usuario;
+      const banner = document.getElementById('empresaUsageBanner');
+      const btnNova = document.getElementById('btnNovaEmpresa');
+      if (banner && u && u.perfil !== 'master' && u.cliente_id) {
+        const total = empresas.length;
+        const max = u.max_empresas;
+        const pct = max && max !== -1 ? Math.min(100, Math.round((total / max) * 100)) : 0;
+        const atLimit = max !== -1 && total >= max;
+        const label = max === -1 ? `${total} empresa(s) cadastrada(s) · plano ilimitado` : `${total} de ${max} empresa(s) utilizada(s)`;
+        document.getElementById('empresaUsageLabel').textContent = label;
+        document.getElementById('empresaUsagePlano').textContent = u.plano_nome || '';
+        document.getElementById('empresaUsageBar').style.width = max === -1 ? '100%' : `${pct}%`;
+        document.getElementById('empresaUsageBar').style.background = atLimit ? 'linear-gradient(90deg,#ef4444,#f87171)' : 'linear-gradient(90deg,#6366f1,#818cf8)';
+        banner.style.display = 'flex';
+        if (btnNova) {
+          btnNova.disabled = atLimit;
+          btnNova.title = atLimit ? 'Limite de empresas atingido. Faça upgrade do plano.' : '';
+          btnNova.style.opacity = atLimit ? '0.5' : '';
+          btnNova.style.cursor = atLimit ? 'not-allowed' : '';
+        }
+      } else if (banner) {
+        banner.style.display = 'none';
+      }
+
       if (!empresas.length) {
         grid.innerHTML = `
           <div class="empty-empresas" style="grid-column: 1 / -1;">
@@ -588,6 +690,7 @@ const app = {
             <span class="meta-chip ${emp.tipo === 'matriz' ? 'cert-ok' : 'cert-no'}">${emp.tipo === 'matriz' ? 'Matriz' : 'Filial'}</span>
             ${emp.totvs_ativo ? '<span class="meta-chip cert-ok">TOTVS</span>' : ''}
             ${emp.dominio_ativo ? '<span class="meta-chip" style="background:rgba(168,85,247,.12);color:#c084fc">Domínio</span>' : ''}
+            ${emp.nfse_ativo ? '<span class="meta-chip" style="background:rgba(16,185,129,.12);color:#34d399">NFS-e</span>' : ''}
           </div>
         </div>
       `).join('');
@@ -598,7 +701,7 @@ const app = {
   },
 
   updateEmpresaFilters(empresas) {
-    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'manualEmpresaHub', 'exportEmpresa', 'dominioEmpresa', 'filterLogEmpresa'];
+    const filters = ['filterEmpresa', 'syncEmpresaHub', 'totvsEmpresaHub', 'nfseEmpresaHub', 'manualEmpresaHub', 'exportEmpresa', 'dominioEmpresa', 'filterLogEmpresa'];
     filters.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -606,6 +709,7 @@ const app = {
         let html = '<option value="">Todas as Empresas</option>';
         if (id === 'syncEmpresaHub') html = ''; // No "Todas" option
         if (id === 'totvsEmpresaHub') html = '<option value="">🏢 Todas as Empresas (lote)</option>';
+        if (id === 'nfseEmpresaHub') html = '<option value="">🏢 Todas as Empresas (lote)</option>';
         if (id === 'manualEmpresaHub') html = '<option value="">Detectar automaticamente</option>';
         
         empresas.forEach(emp => {
@@ -638,6 +742,7 @@ const app = {
       document.getElementById('modalDominioAtivo').checked = false;
       document.getElementById('modalDominioFields').style.display = 'none';
       document.getElementById('modalDominioIntegrationKey').value = '';
+      document.getElementById('modalNfseAtivo').checked = false;
     } else {
       document.getElementById('modalEmpresaTitulo').textContent = 'Editar Empresa';
       try {
@@ -670,6 +775,7 @@ const app = {
           document.getElementById('modalDominioAtivo').checked = !!emp.dominio_ativo;
           document.getElementById('modalDominioFields').style.display = emp.dominio_ativo ? 'block' : 'none';
           document.getElementById('modalDominioIntegrationKey').value = emp.dominio_integration_key || '';
+          document.getElementById('modalNfseAtivo').checked = !!emp.nfse_ativo;
         }
       } catch (e) { console.error(e); }
     }
@@ -726,6 +832,7 @@ const app = {
     const totvs_branch = document.getElementById('modalTotvsBranch').value;
     const dominio_ativo = document.getElementById('modalDominioAtivo').checked;
     const dominio_integration_key = document.getElementById('modalDominioIntegrationKey').value;
+    const nfse_ativo = document.getElementById('modalNfseAtivo').checked;
     let matriz_id = null;
     
     if (tipo === 'filial') {
@@ -736,9 +843,10 @@ const app = {
     if (!cnpj || cnpj.length !== 14) return this.toast('CNPJ inválido ou não preenchido', 'error');
 
     const data = {
-      cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, 
+      cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
       totvs_ativo, totvs_branch,
-      dominio_ativo, dominio_integration_key
+      dominio_ativo, dominio_integration_key,
+      nfse_ativo
     };
 
     try {
@@ -1572,6 +1680,221 @@ const app = {
         this.toast(data.error || 'Erro ao excluir', 'error');
       }
     } catch (err) { this.toast('Erro ao excluir usuário', 'error'); }
+  },
+
+  // ── PLANOS ────────────────────────────────────────────────────────────────
+
+  async loadPlanos() {
+    try {
+      const res = await fetch('/api/planos', { credentials: 'include' });
+      const planos = await res.json();
+      const tbody = document.getElementById('planosTableBody');
+      if (!tbody) return;
+      if (!Array.isArray(planos)) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#f87171;padding:24px">Erro ao carregar planos: ${planos.error || 'resposta inesperada'}</td></tr>`;
+        return;
+      }
+      if (!planos.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:24px">Nenhum plano cadastrado</td></tr>';
+        return;
+      }
+      tbody.innerHTML = planos.map(p => `
+        <tr>
+          <td style="font-weight:600">${p.nome}</td>
+          <td style="color:#94a3b8">${p.descricao || '—'}</td>
+          <td>${p.max_empresas === -1 ? '<span style="color:#34d399">Ilimitado</span>' : p.max_empresas}</td>
+          <td>${p.preco_mensal ? 'R$ ' + parseFloat(p.preco_mensal).toFixed(2).replace('.', ',') : '—'}</td>
+          <td><span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${p.ativo ? 'rgba(16,185,129,.12)' : 'rgba(100,116,139,.12)'};color:${p.ativo ? '#34d399' : '#94a3b8'}">${p.ativo ? 'ATIVO' : 'INATIVO'}</span></td>
+          <td>
+            <button onclick="app.abrirModalPlano(${p.id})" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);color:#818cf8;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;margin-right:4px">Editar</button>
+            <button onclick="app.excluirPlano(${p.id})" style="background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);color:#f87171;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px">Excluir</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (err) { console.error('Erro ao carregar planos', err); }
+  },
+
+  async abrirModalPlano(id = null) {
+    document.getElementById('modalPlanoId').value = id || '';
+    document.getElementById('modalPlanoTitulo').textContent = id ? 'Editar Plano' : 'Novo Plano';
+    if (!id) {
+      document.getElementById('modalPlanoNome').value = '';
+      document.getElementById('modalPlanoDescricao').value = '';
+      document.getElementById('modalPlanoMaxEmpresas').value = '10';
+      document.getElementById('modalPlanoPreco').value = '';
+    } else {
+      try {
+        const res = await fetch(`/api/planos`, { credentials: 'include' });
+        const planos = await res.json();
+        const p = planos.find(x => x.id === id);
+        if (p) {
+          document.getElementById('modalPlanoNome').value = p.nome;
+          document.getElementById('modalPlanoDescricao').value = p.descricao || '';
+          document.getElementById('modalPlanoMaxEmpresas').value = p.max_empresas;
+          document.getElementById('modalPlanoPreco').value = p.preco_mensal || '';
+        }
+      } catch (err) { console.error(err); }
+    }
+    document.getElementById('modalPlano').classList.add('active');
+  },
+
+  async salvarPlano() {
+    const id = document.getElementById('modalPlanoId').value;
+    const nome = document.getElementById('modalPlanoNome').value.trim();
+    const max_empresas = parseInt(document.getElementById('modalPlanoMaxEmpresas').value);
+    if (!nome) return this.toast('Nome é obrigatório', 'error');
+    if (isNaN(max_empresas)) return this.toast('Máx. empresas inválido', 'error');
+    const body = {
+      nome,
+      descricao: document.getElementById('modalPlanoDescricao').value.trim(),
+      max_empresas,
+      preco_mensal: document.getElementById('modalPlanoPreco').value || null
+    };
+    try {
+      const url = id ? `/api/planos/${id}` : '/api/planos';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (data.success) {
+        this.toast(id ? 'Plano atualizado' : 'Plano criado', 'success');
+        document.getElementById('modalPlano').classList.remove('active');
+        this.loadPlanos();
+      } else {
+        this.toast(data.error || 'Erro ao salvar plano', 'error');
+      }
+    } catch (err) { this.toast('Erro ao salvar plano', 'error'); }
+  },
+
+  async excluirPlano(id) {
+    if (!confirm('Excluir este plano? Clientes vinculados perderão o plano.')) return;
+    try {
+      const res = await fetch(`/api/planos/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.success) { this.toast('Plano excluído', 'success'); this.loadPlanos(); }
+      else this.toast(data.error || 'Erro ao excluir', 'error');
+    } catch (err) { this.toast('Erro ao excluir plano', 'error'); }
+  },
+
+  // ── CLIENTES ──────────────────────────────────────────────────────────────
+
+  async loadClientes() {
+    try {
+      const res = await fetch('/api/clientes', { credentials: 'include' });
+      const clientes = await res.json();
+      const tbody = document.getElementById('clientesTableBody');
+      if (!tbody) return;
+      if (!Array.isArray(clientes)) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#f87171;padding:24px">Erro ao carregar clientes: ${clientes.error || 'resposta inesperada'}</td></tr>`;
+        return;
+      }
+      if (!clientes.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px">Nenhum cliente cadastrado</td></tr>';
+        return;
+      }
+      const statusCfg = {
+        ativo:     { label: 'Ativo',     bg: 'rgba(16,185,129,.12)',  color: '#34d399' },
+        suspenso:  { label: 'Suspenso',  bg: 'rgba(245,158,11,.12)', color: '#fbbf24' },
+        cancelado: { label: 'Cancelado', bg: 'rgba(239,68,68,.12)',   color: '#f87171' }
+      };
+      tbody.innerHTML = clientes.map(c => {
+        const st = statusCfg[c.status] || statusCfg.ativo;
+        const maxEmp = c.plano_max_empresas;
+        const empBar = maxEmp && maxEmp !== -1
+          ? `<div style="font-size:12px">${c.total_empresas}/${maxEmp} <span style="color:#64748b">empresas</span></div>`
+          : `<div style="font-size:12px">${c.total_empresas} <span style="color:#64748b">/ ilimitado</span></div>`;
+        const venc = c.data_vencimento ? new Date(c.data_vencimento).toLocaleDateString('pt-BR') : '—';
+        return `<tr>
+          <td style="font-weight:600">${c.nome}</td>
+          <td style="color:#94a3b8">${c.email || '—'}</td>
+          <td>${c.plano_nome ? `<span style="background:rgba(99,102,241,.1);color:#818cf8;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700">${c.plano_nome}</span>` : '—'}</td>
+          <td><span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;background:${st.bg};color:${st.color}">${st.label.toUpperCase()}</span></td>
+          <td>${empBar}</td>
+          <td style="color:#94a3b8;font-size:12px">${venc}</td>
+          <td>
+            <button onclick="app.abrirModalCliente(${c.id})" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);color:#818cf8;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;margin-right:4px">Editar</button>
+            <button onclick="app.excluirCliente(${c.id})" style="background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);color:#f87171;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px">Excluir</button>
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) { console.error('Erro ao carregar clientes', err); }
+  },
+
+  async abrirModalCliente(id = null) {
+    document.getElementById('modalClienteId').value = id || '';
+    document.getElementById('modalClienteTitulo').textContent = id ? 'Editar Cliente' : 'Novo Cliente';
+
+    // Populate plano select
+    try {
+      const res = await fetch('/api/planos', { credentials: 'include' });
+      const planos = await res.json();
+      const sel = document.getElementById('modalClientePlano');
+      sel.innerHTML = '<option value="">Sem plano</option>' + planos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
+    } catch (_) {}
+
+    if (!id) {
+      document.getElementById('modalClienteNome').value = '';
+      document.getElementById('modalClienteEmail').value = '';
+      document.getElementById('modalClienteTelefone').value = '';
+      document.getElementById('modalClientePlano').value = '';
+      document.getElementById('modalClienteStatus').value = 'ativo';
+      document.getElementById('modalClienteVencimento').value = '';
+      document.getElementById('modalClienteObs').value = '';
+    } else {
+      try {
+        const res = await fetch(`/api/clientes/${id}`, { credentials: 'include' });
+        const c = await res.json();
+        document.getElementById('modalClienteNome').value = c.nome || '';
+        document.getElementById('modalClienteEmail').value = c.email || '';
+        document.getElementById('modalClienteTelefone').value = c.telefone || '';
+        document.getElementById('modalClientePlano').value = c.plano_id || '';
+        document.getElementById('modalClienteStatus').value = c.status || 'ativo';
+        document.getElementById('modalClienteVencimento').value = c.data_vencimento ? c.data_vencimento.substring(0, 10) : '';
+        document.getElementById('modalClienteObs').value = c.observacoes || '';
+      } catch (err) { console.error(err); }
+    }
+    document.getElementById('modalCliente').classList.add('active');
+  },
+
+  async salvarCliente() {
+    const id = document.getElementById('modalClienteId').value;
+    const nome = document.getElementById('modalClienteNome').value.trim();
+    if (!nome) return this.toast('Nome é obrigatório', 'error');
+    const body = {
+      nome,
+      email: document.getElementById('modalClienteEmail').value.trim() || null,
+      telefone: document.getElementById('modalClienteTelefone').value.trim() || null,
+      plano_id: document.getElementById('modalClientePlano').value || null,
+      status: document.getElementById('modalClienteStatus').value,
+      data_vencimento: document.getElementById('modalClienteVencimento').value || null,
+      observacoes: document.getElementById('modalClienteObs').value.trim() || null
+    };
+    try {
+      const url = id ? `/api/clientes/${id}` : '/api/clientes';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });
+      let data = {};
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok) {
+        return this.toast(data.error || `Erro ${res.status} ao salvar cliente`, 'error');
+      }
+      if (data.success) {
+        this.toast(id ? 'Cliente atualizado' : 'Cliente criado', 'success');
+        document.getElementById('modalCliente').classList.remove('active');
+        this.loadClientes();
+      } else {
+        this.toast(data.error || 'Erro ao salvar cliente', 'error');
+      }
+    } catch (err) { this.toast('Erro ao salvar cliente: ' + err.message, 'error'); }
+  },
+
+  async excluirCliente(id) {
+    if (!confirm('Excluir este cliente? As empresas e usuários vinculados perderão a associação.')) return;
+    try {
+      const res = await fetch(`/api/clientes/${id}`, { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (data.success) { this.toast('Cliente excluído', 'success'); this.loadClientes(); }
+      else this.toast(data.error || 'Erro ao excluir', 'error');
+    } catch (err) { this.toast('Erro ao excluir cliente', 'error'); }
   }
 
 };

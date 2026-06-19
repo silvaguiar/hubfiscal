@@ -7,7 +7,8 @@ const XLSX = require('xlsx');
 const SefazClient = require('../sefaz/client');
 const TotvsService = require('../integracoes/totvs-service');
 const DominioService = require('../integracoes/dominio-service');
-const { requirePerfil, requireModulo } = require('../auth/middleware');
+const PortalNfseService = require('../integracoes/portal-nfse-service');
+const { requirePerfil, requireModulo, requireClienteAtivo } = require('../auth/middleware');
 
 module.exports = function (db, upload) {
 
@@ -72,7 +73,8 @@ module.exports = function (db, upload) {
 
   router.get('/empresas', requireModulo('empresas', 'view'), async (req, res) => {
     try {
-      const empresas = await db.getEmpresas();
+      const clienteId = req.usuario.perfil !== 'master' ? req.usuario.cliente_id : null;
+      const empresas = await db.getEmpresas(clienteId);
       // Mask passwords
       empresas.forEach(e => { if (e.certificado_senha) e.certificado_senha = '••••••'; });
       res.json(empresas);
@@ -88,18 +90,29 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.post('/empresas', requireModulo('empresas', 'create'), async (req, res) => {
+  router.post('/empresas', requireModulo('empresas', 'create'), requireClienteAtivo, async (req, res) => {
     try {
-      const { 
+      const {
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
-        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url,
+        nfse_ativo
       } = req.body;
       if (!cnpj) return res.status(400).json({ error: 'CNPJ é obrigatório' });
-      const empresa = await db.createEmpresa({ 
+
+      const clienteId = req.usuario.perfil !== 'master' ? req.usuario.cliente_id : null;
+      if (clienteId) {
+        const uso = await db.getClienteUso(clienteId);
+        if (uso && uso.max_empresas !== -1 && uso.total_empresas >= uso.max_empresas) {
+          return res.status(403).json({ error: `Limite de empresas atingido (${uso.max_empresas}). Faça upgrade do seu plano para cadastrar mais empresas.` });
+        }
+      }
+
+      const empresa = await db.createEmpresa({
         cnpj, razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente, certificado_senha,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
-        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url,
+        nfse_ativo, cliente_id: clienteId
       });
       empresa.certificado_senha = empresa.certificado_senha ? '••••••' : '';
       res.json({ success: true, empresa });
@@ -109,24 +122,26 @@ module.exports = function (db, upload) {
     }
   });
 
-  router.put('/empresas/:id', requireModulo('empresas', 'create'), async (req, res) => {
+  router.put('/empresas/:id', requireModulo('empresas', 'create'), requireClienteAtivo, async (req, res) => {
     try {
-      const { 
+      const {
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
-        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url,
+        nfse_ativo
       } = req.body;
       const empresa = await db.updateEmpresa(parseInt(req.params.id), {
         razao_social, nome_fantasia, tipo, matriz_id, uf, ambiente,
         totvs_base_url, totvs_user, totvs_password, totvs_client_id, totvs_client_secret, totvs_branch, totvs_grant_type, totvs_ativo,
-        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url
+        dominio_integration_key, dominio_ativo, dominio_client_id, dominio_client_secret, dominio_auth_url, dominio_api_url,
+        nfse_ativo
       });
       empresa.certificado_senha = empresa.certificado_senha ? '••••••' : '';
       res.json({ success: true, empresa });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/empresas/:id', requireModulo('empresas', 'manage'), async (req, res) => {
+  router.delete('/empresas/:id', requireModulo('empresas', 'manage'), requireClienteAtivo, async (req, res) => {
     try {
       await db.deleteEmpresa(parseInt(req.params.id));
       res.json({ success: true });
@@ -640,6 +655,61 @@ module.exports = function (db, upload) {
       await db.saveDominioGlobalConfig(req.body);
       res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Integração Portal Nacional NFS-e ──────────────────
+
+  router.get('/nfse/status', async (req, res) => {
+    try {
+      const { empresaId } = req.query;
+      const empresa = empresaId ? await db.getEmpresaById(parseInt(empresaId)) : null;
+      if (!empresa) return res.json({ configurado: false });
+      res.json({
+        configurado: true,
+        ativo: !!(empresa.nfse_ativo == 1 || empresa.nfse_ativo === true),
+        ultimoSync: empresa.nfse_ultimo_sync,
+        certificado: !!empresa.certificado_arquivo
+      });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  router.post('/nfse/sincronizar', requireModulo('notas', 'create'), async (req, res) => {
+    try {
+      const { empresaId, dataInicio, dataFim } = req.body;
+      if (!dataInicio || !dataFim) return res.status(400).json({ error: 'dataInicio e dataFim são obrigatórios.' });
+
+      res.json({ success: true, message: 'Sincronização Portal NFS-e iniciada em segundo plano.' });
+
+      const service = new PortalNfseService(db);
+      service.sincronizar(empresaId ? parseInt(empresaId) : null, dataInicio, dataFim)
+        .then(result => console.log('[NFS-e] Sincronização finalizada:', result))
+        .catch(err => console.error('[NFS-e] Erro na sincronização:', err.message));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  router.post('/nfse/sincronizar-todas', requireModulo('notas', 'create'), async (req, res) => {
+    try {
+      const { dataInicio, dataFim } = req.body;
+      if (!dataInicio || !dataFim) return res.status(400).json({ error: 'dataInicio e dataFim são obrigatórios.' });
+
+      res.json({ success: true, message: 'Sincronização Portal NFS-e (todas as empresas) iniciada em segundo plano.' });
+
+      const service = new PortalNfseService(db);
+      service.sincronizar(null, dataInicio, dataFim)
+        .then(result => console.log('[NFS-e] Lote finalizado:', result))
+        .catch(err => console.error('[NFS-e] Erro no lote:', err.message));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  router.get('/nfse/logs', async (req, res) => {
+    try {
+      const { empresaId } = req.query;
+      const filtro = { tipo: 'portal_nfse', limite: 1 };
+      if (empresaId) filtro.empresa_id = parseInt(empresaId);
+      const logs = await db.getLogsExecucao(filtro);
+      if (logs && logs.length > 0) return res.send(logs[0].detalhes || `Status: ${logs[0].status}`);
+      res.send('Aguardando início do processo...');
+    } catch (err) { res.status(500).send(err.message); }
   });
 
   // ── Exportação ───────────────────────────────────────
