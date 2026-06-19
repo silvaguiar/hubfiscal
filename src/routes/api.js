@@ -225,6 +225,14 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
+  router.delete('/notas/empresa/:empresaId', requireModulo('notas', 'manage'), async (req, res) => {
+    try {
+      const empresaId = parseInt(req.params.empresaId);
+      await db.runSql('DELETE FROM notas_fiscais WHERE empresa_id = ?', [empresaId]);
+      res.json({ success: true, empresaId });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
   // ── Importação Manual de XML ──────────────────────────
 
   router.post('/importar-xml', async (req, res) => {
