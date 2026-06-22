@@ -269,7 +269,7 @@ const app = {
   renderNotasTable(notas) {
     const tbody = document.getElementById('notasTableBody');
     if (!notas.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:40px">Nenhuma nota encontrada</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px">Nenhuma nota encontrada</td></tr>';
       return;
     }
     tbody.innerHTML = notas.map(n => {
@@ -277,17 +277,24 @@ const app = {
       const domBadgeClass = ds === 'enviado' ? 'dom-enviado' : ds === 'erro' ? 'dom-erro' : ds === 'enviando' ? 'dom-enviando' : 'dom-pendente';
       const domLabel = ds === 'enviado' ? '✓ Enviado' : ds === 'erro' ? '✕ Erro' : ds === 'enviando' ? '⏳ Enviando' : '● Pendente';
       const domTooltip = ds === 'erro' && n.dominio_erro ? ` title="${n.dominio_erro}"` : ds === 'enviado' && n.dominio_enviado_em ? ` title="Enviado em ${this.formatDate(n.dominio_enviado_em)}"` : '';
+      const sit = n.situacao || 'autorizada';
+      const sitColor = sit === 'autorizada' ? '#4ade80' : sit === 'cancelada' ? '#f87171' : sit === 'denegada' ? '#fb923c' : 'var(--text-muted)';
       return `
       <tr>
         <td><strong>${n.numero_nf || '—'}</strong></td>
         <td>${this.formatDate(n.data_emissao)}</td>
+        <td style="color:var(--text-muted);font-size:12px">${this.formatDate(n.created_at)}</td>
         <td class="chave-cell" title="${n.chave_acesso}">${n.chave_acesso}</td>
         <td>${this.truncate(n.emitente_nome, 25)}<br><small style="color:var(--text-muted)">${this.formatCnpj(n.emitente_cnpj)}</small></td>
         <td>${this.truncate(n.destinatario_nome, 25)}<br><small style="color:var(--text-muted)">${this.formatCnpj(n.destinatario_cnpj)}</small></td>
         <td><strong>${this.formatCurrency(n.valor_total)}</strong></td>
         <td><span class="badge badge-${n.tipo}">${n.tipo}</span></td>
+        <td><span style="font-size:12px;font-weight:600;color:${sitColor}">${sit.charAt(0).toUpperCase()+sit.slice(1)}</span></td>
         <td><span class="badge ${domBadgeClass}"${domTooltip}>${domLabel}</span></td>
         <td>
+          <button class="action-btn" title="Visualizar DANFE/NFS-e" onclick="app.viewDanfe(${n.id})">
+            <span class="material-icons-round" style="font-size:16px">picture_as_pdf</span>
+          </button>
           <button class="action-btn" title="Ver XML" onclick="app.viewXml(${n.id})">
             <span class="material-icons-round" style="font-size:16px">code</span>
           </button>
@@ -326,6 +333,81 @@ const app = {
 
   downloadXml(id) {
     window.open(`/api/notas/${id}/xml`, '_blank');
+  },
+
+  async viewDanfe(id) {
+    try {
+      const res = await fetch(`/api/notas/${id}`);
+      const n = await res.json();
+      const isNfse = (n.schema_type === 'nfse') || (n.chave_acesso || '').length > 44;
+      const tipoDoc = isNfse ? 'NFS-e' : 'NF-e';
+      const sit = (n.situacao || 'autorizada');
+      const sitColor = sit === 'autorizada' ? '#16a34a' : sit === 'cancelada' ? '#dc2626' : '#ea580c';
+      const fmt = v => v ? new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v) : 'R$ 0,00';
+      const fmtDate = v => { if (!v) return '—'; const d = new Date(v); return isNaN(d) ? v : d.toLocaleDateString('pt-BR'); };
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+        <title>${tipoDoc} ${n.numero_nf || ''}</title>
+        <style>
+          body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#111;font-size:13px}
+          .danfe{max-width:800px;margin:0 auto;border:2px solid #111}
+          .header{background:#1e40af;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+          .header h1{margin:0;font-size:18px}
+          .header .num{font-size:24px;font-weight:bold}
+          .sit{display:inline-block;padding:4px 12px;border-radius:4px;font-weight:bold;color:#fff;background:${sitColor}}
+          .section{border-bottom:1px solid #ccc;padding:10px 14px}
+          .section-title{font-weight:bold;font-size:11px;color:#555;text-transform:uppercase;margin-bottom:6px}
+          .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+          .field label{font-size:10px;color:#777;display:block;margin-bottom:2px}
+          .field span{font-weight:600}
+          .valores{background:#f0fdf4;padding:10px 14px}
+          .valor-total{font-size:22px;font-weight:bold;color:#16a34a}
+          .footer{padding:10px 14px;font-size:11px;color:#777;text-align:center}
+          .chave{font-family:monospace;font-size:10px;word-break:break-all;color:#444;padding:6px 14px;border-bottom:1px solid #ccc;background:#f9fafb}
+          @media print{.no-print{display:none}}
+        </style>
+      </head><body>
+        <div class="no-print" style="margin-bottom:12px">
+          <button onclick="window.print()" style="background:#1e40af;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px">Imprimir / Salvar PDF</button>
+          <button onclick="window.close()" style="margin-left:8px;background:#6b7280;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px">Fechar</button>
+        </div>
+        <div class="danfe">
+          <div class="header">
+            <div><h1>${tipoDoc} — Documento Fiscal</h1><div style="font-size:12px;opacity:.85">Emitido em ${fmtDate(n.data_emissao)}</div></div>
+            <div style="text-align:right"><div class="num">Nº ${n.numero_nf || '—'}</div><div style="font-size:12px;margin-top:4px">Série ${n.serie || '1'}</div></div>
+          </div>
+          <div class="section" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Situação: <span class="sit">${sit.toUpperCase()}</span></span>
+            <span style="font-size:11px;color:#666">Capturado em: ${fmtDate(n.created_at)}</span>
+          </div>
+          <div class="chave">Chave de Acesso: ${n.chave_acesso || '—'}</div>
+          <div class="section">
+            <div class="section-title">Emitente (Prestador)</div>
+            <div class="grid">
+              <div class="field"><label>Nome / Razão Social</label><span>${n.emitente_nome || '—'}</span></div>
+              <div class="field"><label>CNPJ / CPF</label><span>${n.emitente_cnpj || '—'}</span></div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-title">Destinatário (Tomador)</div>
+            <div class="grid">
+              <div class="field"><label>Nome / Razão Social</label><span>${n.destinatario_nome || '—'}</span></div>
+              <div class="field"><label>CNPJ / CPF</label><span>${n.destinatario_cnpj || '—'}</span></div>
+            </div>
+          </div>
+          <div class="valores">
+            <div class="section-title">Valores</div>
+            <div class="grid">
+              <div class="field"><label>Valor Total</label><span class="valor-total">${fmt(n.valor_total)}</span></div>
+              <div class="field"><label>Tipo</label><span style="text-transform:uppercase">${n.tipo || '—'}</span></div>
+            </div>
+          </div>
+          <div class="footer">HubFiscal — Documento gerado em ${new Date().toLocaleString('pt-BR')} — Não possui valor fiscal</div>
+        </div>
+      </body></html>`;
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+    } catch (err) { this.toast('Erro ao gerar visualização', 'error'); }
   },
 
   closeModal() {
