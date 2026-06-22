@@ -302,13 +302,14 @@ async function insertNotas(notas, empresaId = null) {
   return count;
 }
 
-async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, dominioStatus, pagina = 1, limite = 50 } = {}) {
+async function getNotas({ tipo, busca, modelo, dataInicio, dataFim, empresaId, dominioStatus, situacao, pagina = 1, limite = 50 } = {}) {
   let where = [];
   let params = [];
 
   if (empresaId) { params.push(empresaId); where.push(`empresa_id = $${params.length}`); }
   if (tipo && tipo !== 'todos') { params.push(tipo); where.push(`tipo = $${params.length}`); }
   if (modelo && modelo !== 'todos') { params.push(modelo.toString()); where.push(`schema_type = $${params.length}`); }
+  if (situacao) { params.push(situacao); where.push(`situacao = $${params.length}`); }
 
   if (busca) {
     const like = `%${busca}%`;

@@ -188,11 +188,12 @@ module.exports = function (db, upload) {
 
   router.get('/notas', requireModulo('notas', 'view'), async (req, res) => {
     try {
-      const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo, dominioStatus } = req.query;
+      const { tipo, busca, dataInicio, dataFim, pagina, limite, empresaId, modelo, dominioStatus, situacao } = req.query;
       const result = await db.getNotas({
         tipo, busca, modelo, dataInicio, dataFim,
         empresaId: empresaId ? parseInt(empresaId) : null,
         dominioStatus: dominioStatus || null,
+        situacao: situacao || null,
         pagina: parseInt(pagina) || 1,
         limite: parseInt(limite) || 50
       });

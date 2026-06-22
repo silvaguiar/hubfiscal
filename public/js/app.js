@@ -253,10 +253,12 @@ const app = {
     const dataFim = document.getElementById('filterDataFim').value;
     const empresaId = document.getElementById('filterEmpresa').value;
     const dominioStatus = document.getElementById('filterDominioStatus')?.value || '';
+    const situacao = document.getElementById('filterSituacao')?.value || '';
 
     const params = new URLSearchParams({ tipo, busca, dataInicio, dataFim, pagina, limite: 50 });
     if (empresaId) params.set('empresaId', empresaId);
     if (dominioStatus) params.set('dominioStatus', dominioStatus);
+    if (situacao) params.set('situacao', situacao);
 
     try {
       const res = await fetch(`/api/notas?${params}`);
