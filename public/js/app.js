@@ -26,8 +26,7 @@ const app = {
     const yyyyMMDD = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const el1 = document.getElementById('nfseDataInicioHub');
     const el2 = document.getElementById('nfseDataFimHub');
-    if (el1) el1.value = `${yyyyMM}-01`;
-    if (el2) el2.value = yyyyMMDD(hoje);
+    // datas NFS-e ficam em branco — usuário deve preencher antes de buscar
     const menuToggle = document.getElementById('menuToggle');
     if (menuToggle) {
       menuToggle.addEventListener('click', () => {
