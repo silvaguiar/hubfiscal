@@ -157,6 +157,10 @@ class TotvsService {
       const invoices = searchResult.data || [];
       
       this.writeLog(`✅ TOTVS retornou ${invoices.length} registros.`);
+      // Atualiza contador de encontradas imediatamente após o retorno da API
+      if (this.logId) {
+        await this.db.updateLogExecucao(this.logId, { notas_encontradas: invoices.length }).catch(() => {});
+      }
 
       if (invoices.length > 0) {
         this.writeLog(`🔍 Estrutura COMPLETA da 1ª nota: ${JSON.stringify(invoices[0])}`);
@@ -254,7 +258,7 @@ class TotvsService {
 
       this.writeLog(`🏁 Fim: ${salvos} novos, ${pulados} já existiam, ${erros} falhas, ${ignorados} sem chave válida.`);
       await this.db.updateLogExecucao(this.logId, {
-        status: 'completed',
+        status: 'sucesso',
         notas_encontradas: invoices.length,
         notas_inseridas: salvos,
         notas_existentes: pulados,
@@ -268,7 +272,7 @@ class TotvsService {
     } catch (err) {
       this.writeLog(`❌ Erro: ${err.message}`);
       await this.db.updateLogExecucao(this.logId, {
-        status: 'failed',
+        status: 'erro',
         detalhes: this.logBuffer,
         duracao_ms: Date.now() - startTime
       }).catch(err => {
