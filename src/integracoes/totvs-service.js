@@ -103,8 +103,7 @@ class TotvsService {
     };
 
     const client = new TotvsClient(config);
-    const startDate = `${dataInicio}T00:00:00.000Z`;
-    const endDate = `${dataFim}T23:59:59.999Z`;
+    const fatias = this._splitDateRange(dataInicio, dataFim);
 
     const labelLog = isGlobal ? 'TODAS AS EMPRESAS ATIVAS' : empresas[0].razao_social;
     const startTime = Date.now();
@@ -129,33 +128,17 @@ class TotvsService {
       });
     }
 
-    this.writeLog(`🚀 Iniciando para ${labelLog} (${dataReferencia})`);
+    this.writeLog(`🚀 Iniciando para ${labelLog} (${dataReferencia}) — ${fatias.length} fatia(s) de até 6 meses`);
 
     try {
       await client.obterToken();
 
-      // Coleta branches válidos (inteiro > 0) de todas as empresas ativas
       const branches = [...new Set(
         empresas
           .map(e => parseInt(e.totvs_branch))
           .filter(b => !isNaN(b) && b > 0)
       )];
-      const filtros = { startDate, endDate };
-      if (branches.length > 0) filtros.branchCodeList = branches;
-
       this.writeLog(`🏢 Filiais TOTVS para busca: [${branches.length > 0 ? branches.join(', ') : 'todas (sem filtro)'}]`);
-      const searchResult = await client.buscarInvoices(filtros);
-      const invoices = searchResult.data || [];
-      
-      this.writeLog(`✅ TOTVS retornou ${invoices.length} registros.`);
-      // Atualiza contador de encontradas imediatamente após o retorno da API
-      if (this.logId) {
-        await this.db.updateLogExecucao(this.logId, { notas_encontradas: invoices.length }).catch(() => {});
-      }
-
-      if (invoices.length > 0) {
-        this.writeLog(`🔍 Estrutura COMPLETA da 1ª nota: ${JSON.stringify(invoices[0])}`);
-      }
 
       // Mapeamento rápido de CNPJ limpo para empresa correspondente
       const empMap = {};
@@ -163,10 +146,27 @@ class TotvsService {
         empMap[e.cnpj.replace(/\D/g, '')] = e;
       });
 
-      let salvos = 0, pulados = 0, erros = 0, ignorados = 0;
+      let salvos = 0, pulados = 0, erros = 0, ignorados = 0, totalEncontradas = 0;
       let relatorioLog = `Relatório de Extração TOTVS\nData: ${new Date().toLocaleString()}\nPeríodo Referência: ${dataReferencia}\n\n`;
       let logSemChave = "--- NOTAS SEM CHAVE VÁLIDA NA TOTVS (Não importadas) ---\n";
       let logJaExistentes = "\n--- NOTAS IGNORADAS (Já existiam no banco de dados) ---\n";
+
+      for (const [fi, fatia] of fatias.entries()) {
+        this.writeLog(`📅 Fatia ${fi + 1}/${fatias.length}: ${fatia.de} → ${fatia.ate}`);
+        const filtros = { startDate: `${fatia.de}T00:00:00.000Z`, endDate: `${fatia.ate}T23:59:59.999Z` };
+        if (branches.length > 0) filtros.branchCodeList = branches;
+
+        const searchResult = await client.buscarInvoices(filtros);
+        const invoices = searchResult.data || [];
+        totalEncontradas += invoices.length;
+        this.writeLog(`✅ Fatia ${fi + 1}: ${invoices.length} registros retornados.`);
+        if (this.logId) {
+          await this.db.updateLogExecucao(this.logId, { notas_encontradas: totalEncontradas }).catch(() => {});
+        }
+
+        if (invoices.length > 0 && fi === 0) {
+          this.writeLog(`🔍 Estrutura COMPLETA da 1ª nota: ${JSON.stringify(invoices[0])}`);
+        }
 
       for (let i = 0; i < invoices.length; i++) {
         const inv = invoices[i];
@@ -235,14 +235,16 @@ class TotvsService {
         }
       }
 
+      } // fim loop fatias
+
       if (ignorados > 0 || pulados > 0) {
         try {
           const dataPath = path.join(__dirname, '..', '..', 'data');
           if (!fs.existsSync(dataPath)) fs.mkdirSync(dataPath, { recursive: true });
-          
+
           if (ignorados === 0) logSemChave = "";
           if (pulados === 0) logJaExistentes = "";
-          
+
           fs.writeFileSync(path.join(dataPath, 'totvs_invalidas.txt'), relatorioLog + logSemChave + logJaExistentes);
         } catch(e) { console.error('Erro ao salvar log de invalidas', e); }
       }
@@ -250,7 +252,7 @@ class TotvsService {
       this.writeLog(`🏁 Fim: ${salvos} novos, ${pulados} já existiam, ${erros} falhas, ${ignorados} sem chave válida.`);
       await this.db.updateLogExecucao(this.logId, {
         status: 'sucesso',
-        notas_encontradas: invoices.length,
+        notas_encontradas: totalEncontradas,
         notas_inseridas: salvos,
         notas_existentes: pulados,
         notas_enviadas: 0,
@@ -259,7 +261,7 @@ class TotvsService {
       }).catch(err => {
         console.warn('Falha ao finalizar log TOTVS no banco:', err.message);
       });
-      return { success: true, encontradas: invoices.length, salvas: salvos, puladas: pulados, erros, ignorados };
+      return { success: true, encontradas: totalEncontradas, salvas: salvos, puladas: pulados, erros, ignorados };
     } catch (err) {
       this.writeLog(`❌ Erro: ${err.message}`);
       await this.db.updateLogExecucao(this.logId, {
@@ -487,6 +489,35 @@ class TotvsService {
       });
       throw err;
     }
+  }
+
+  // Divide o intervalo em fatias de no máximo 6 meses (limite da API TOTVS)
+  _splitDateRange(dataInicio, dataFim, maxMeses = 6) {
+    const fatias = [];
+    let atual = new Date(dataInicio + 'T00:00:00Z');
+    const fim = new Date(dataFim + 'T00:00:00Z');
+
+    while (atual <= fim) {
+      const fatiaDe = atual.toISOString().slice(0, 10);
+
+      // Avança maxMeses meses
+      const proximoMes = new Date(atual);
+      proximoMes.setUTCMonth(proximoMes.getUTCMonth() + maxMeses);
+      proximoMes.setUTCDate(proximoMes.getUTCDate() - 1); // último dia da fatia
+
+      const fatiaAte = proximoMes > fim ? fim.toISOString().slice(0, 10) : proximoMes.toISOString().slice(0, 10);
+      fatias.push({ de: fatiaDe, ate: fatiaAte });
+
+      // Próxima fatia começa no dia seguinte
+      atual = new Date(proximoMes);
+      if (proximoMes <= fim) {
+        atual.setUTCDate(atual.getUTCDate() + 1);
+      } else {
+        break;
+      }
+    }
+
+    return fatias;
   }
 }
 
