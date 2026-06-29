@@ -1,5 +1,5 @@
 /**
- * HubFiscal — Frontend Auth Module
+ * SynkFiscal — Frontend Auth Module
  * Gerencia autenticação, proteção do dashboard e info do usuário
  */
 
@@ -41,14 +41,14 @@ const Auth = {
         credentials: 'include'
       });
     } catch (_) {}
-    localStorage.removeItem('hubfiscal_token');
-    localStorage.removeItem('hubfiscal_user');
+    localStorage.removeItem('synkfiscal_token');
+    localStorage.removeItem('synkfiscal_user');
     this._redirectLogin();
   },
 
   // Headers com token para chamadas fetch
   _headers(extra = {}) {
-    const token = localStorage.getItem('hubfiscal_token');
+    const token = localStorage.getItem('synkfiscal_token');
     return {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),

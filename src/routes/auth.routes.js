@@ -76,7 +76,7 @@ module.exports = function (db) {
       await db.registrarLogin(usuario.id);
 
       // Cookie httpOnly seguro
-      res.cookie('hubfiscal_token', token, {
+      res.cookie('synkfiscal_token', token, {
         httpOnly: true,
         sameSite: 'strict',
         maxAge: 8 * 60 * 60 * 1000 // 8 horas
@@ -95,7 +95,7 @@ module.exports = function (db) {
 
   // POST /api/auth/logout
   router.post('/logout', async (req, res) => {
-    res.clearCookie('hubfiscal_token');
+    res.clearCookie('synkfiscal_token');
     res.json({ success: true });
   });
 

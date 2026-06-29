@@ -13,7 +13,7 @@ const app = {
     this.setupModalEmpresaListeners();
     this.loadConfig();
 
-    const savedPage = localStorage.getItem('hubfiscal_page');
+    const savedPage = localStorage.getItem('synkfiscal_page');
     if (savedPage && document.getElementById(`page-${savedPage}`)) {
       this.navigateTo(savedPage);
     } else {
@@ -66,7 +66,7 @@ const app = {
     document.getElementById(`page-${page}`).classList.add('active');
     document.querySelector(`[data-page="${page}"]`).classList.add('active');
     this.currentPage = page;
-    localStorage.setItem('hubfiscal_page', page);
+    localStorage.setItem('synkfiscal_page', page);
     if (page === 'dashboard')    this.loadDashboard();
     if (page === 'notas')        this.loadNotas();
     if (page === 'config')       this.loadEmpresas();
@@ -403,7 +403,7 @@ const app = {
               <div class="field"><label>Tipo</label><span style="text-transform:uppercase">${n.tipo || '—'}</span></div>
             </div>
           </div>
-          <div class="footer">HubFiscal — Documento gerado em ${new Date().toLocaleString('pt-BR')} — Não possui valor fiscal</div>
+          <div class="footer">SynkFiscal — Documento gerado em ${new Date().toLocaleString('pt-BR')} — Não possui valor fiscal</div>
         </div>
       </body></html>`;
       const w = window.open('', '_blank');

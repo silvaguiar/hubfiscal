@@ -112,7 +112,7 @@ process.on('SIGINT',  () => { if (scheduler && typeof scheduler.parar === 'funct
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`\n🟢 HubFiscal rodando em http://localhost:${PORT}\n`);
+    console.log(`\n🟢 SynkFiscal rodando em http://localhost:${PORT}\n`);
 
     // Auto-ping para evitar standby no Render free tier
     // Funciona enquanto o processo estiver vivo; complemente com UptimeRobot externamente

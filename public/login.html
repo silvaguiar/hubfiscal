@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HubFiscal — Login</title>
-  <meta name="description" content="Acesse o HubFiscal — Sistema de Gestão Fiscal">
+  <title>SynkFiscal — Login</title>
+  <meta name="description" content="Acesse o SynkFiscal — Sistema de Gestão Fiscal">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
@@ -223,9 +223,13 @@
   <div class="login-wrapper">
     <div class="login-brand">
       <div class="brand-icon-wrap">
-        <span class="material-icons-round">receipt_long</span>
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 10 L18 4 L30 10 L30 20 C30 26 24 31 18 33 C12 31 6 26 6 20 Z" fill="rgba(255,255,255,0.15)" stroke="white" stroke-width="1.5"/>
+          <path d="M12 18 L16 22 L24 14" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 8 L18 4 M18 4 L22 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
       </div>
-      <h1>Hub<span>Fiscal</span></h1>
+      <h1>Synk<span>Fiscal</span></h1>
       <p>Sistema de Gestão Fiscal Inteligente</p>
     </div>
 
@@ -266,7 +270,7 @@
     </div>
 
     <div class="login-footer">
-      HubFiscal &copy; 2026 — Gestão Fiscal Automatizada
+      SynkFiscal &copy; 2026 — Gestão Fiscal Automatizada
     </div>
   </div>
 
@@ -303,8 +307,8 @@
         const data = await res.json();
 
         if (res.ok && data.success) {
-          localStorage.setItem('hubfiscal_token', data.token);
-          localStorage.setItem('hubfiscal_user', JSON.stringify(data.usuario));
+          localStorage.setItem('synkfiscal_token', data.token);
+          localStorage.setItem('synkfiscal_user', JSON.stringify(data.usuario));
           window.location.replace('/');
         } else {
           msg.textContent = data.error || 'Credenciais inválidas.';

@@ -468,10 +468,10 @@ async function criarMasterSeNaoExistir() {
     const bcrypt = require('bcryptjs');
     const senhaGerada = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-4).toUpperCase();
     const hash = await bcrypt.hash(senhaGerada, 10);
-    await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, 'master', 1)`, ['Administrador Master', 'admin@hubfiscal.local', hash]);
+    await runSql(`INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) VALUES (?, ?, ?, 'master', 1)`, ['Administrador Master', 'admin@synkfiscal.local', hash]);
     console.log('\\n' + '='.repeat(55));
     console.log('🔐 USUÁRIO MASTER CRIADO — ANOTE ESTAS CREDENCIAIS:');
-    console.log('   Email : admin@hubfiscal.local');
+    console.log('   Email : admin@synkfiscal.local');
     console.log(`   Senha : ${senhaGerada}`);
     console.log('   ⚠️  Esta senha é exibida apenas uma vez!');
     console.log('='.repeat(55) + '\\n');

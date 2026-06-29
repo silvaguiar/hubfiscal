@@ -15,11 +15,11 @@ if (!JWT_SECRET) {
 }
 
 function gerarToken(payload) {
-  return jwt.sign(payload, JWT_SECRET || 'hubfiscal_secret_change_in_production_2026', { expiresIn: JWT_EXPIRES });
+  return jwt.sign(payload, JWT_SECRET || 'synkfiscal_secret_change_in_production_2026', { expiresIn: JWT_EXPIRES });
 }
 
 function verificarToken(token) {
-  return jwt.verify(token, JWT_SECRET || 'hubfiscal_secret_change_in_production_2026');
+  return jwt.verify(token, JWT_SECRET || 'synkfiscal_secret_change_in_production_2026');
 }
 
 async function hashSenha(senha) {

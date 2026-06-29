@@ -77,7 +77,7 @@ function requireClienteAtivo(req, res, next) {
 
 function extrairToken(req) {
   // 1. Cookie httpOnly (preferencial)
-  if (req.cookies && req.cookies.hubfiscal_token) return req.cookies.hubfiscal_token;
+  if (req.cookies && req.cookies.synkfiscal_token) return req.cookies.synkfiscal_token;
   // 2. Header Authorization Bearer
   const auth = req.headers['authorization'];
   if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
