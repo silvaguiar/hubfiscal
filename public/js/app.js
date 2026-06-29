@@ -529,11 +529,13 @@ const app = {
 
   async dispararTotvsHub() {
     const empresaId = document.getElementById('totvsEmpresaHub').value;
-    const mes = document.getElementById('totvsMesHub').value; // Formato YYYY-MM
+    const dataInicio = document.getElementById('totvsDataInicio').value;
+    const dataFim = document.getElementById('totvsDataFim').value;
     const log = document.getElementById('totvsLogHub');
     const btn = document.querySelector('#page-importador_nfs .hub-card:nth-child(2) button');
 
-    if (!mes) return this.toast('Selecione o mês de referência', 'error');
+    if (!dataInicio || !dataFim) return this.toast('Selecione o período de início e fim', 'error');
+    if (dataInicio > dataFim) return this.toast('A data de início deve ser anterior à data fim', 'error');
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-radius:50%;border-top-color:transparent;animation:spin 1s linear infinite;margin-right:8px;"></span> Disparando...';
@@ -545,7 +547,7 @@ const app = {
       const res = await fetch('/api/totvs/extrair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresaId, mesReferencia: mes })
+        body: JSON.stringify({ empresaId, dataInicio, dataFim })
       });
       const data = await res.json();
 

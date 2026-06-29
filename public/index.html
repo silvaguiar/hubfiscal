@@ -431,8 +431,12 @@
             <select id="totvsEmpresaHub" class="input-field"></select>
           </div>
           <div class="form-group">
-            <label>Mês de Referência</label>
-            <input type="month" id="totvsMesHub" class="input-field">
+            <label>Período de Referência</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="date" id="totvsDataInicio" class="input-field" placeholder="Data Início" style="flex:1">
+              <span style="color:var(--text-muted);font-size:13px;white-space:nowrap">até</span>
+              <input type="date" id="totvsDataFim" class="input-field" placeholder="Data Fim" style="flex:1">
+            </div>
           </div>
           <div id="totvsLogHub" class="totvs-log-terminal"></div>
           <button class="btn btn-primary w-full" onclick="app.dispararTotvsHub()">

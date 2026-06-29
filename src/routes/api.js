@@ -532,13 +532,13 @@ module.exports = function (db, upload) {
 
   router.post('/totvs/extrair', requireModulo('totvs', 'create'), express.json(), async (req, res) => {
     try {
-      const { empresaId, mesReferencia } = req.body;
-      if (!mesReferencia) return res.status(400).json({ error: 'Mês de referência é obrigatório.' });
+      const { empresaId, dataInicio, dataFim } = req.body;
+      if (!dataInicio || !dataFim) return res.status(400).json({ error: 'Período de referência é obrigatório.' });
 
       res.json({ success: true, message: 'Extração TOTVS iniciada em segundo plano.' });
 
       const service = new TotvsService(db);
-      service.extrair(empresaId ? parseInt(empresaId) : null, mesReferencia)
+      service.extrair(empresaId ? parseInt(empresaId) : null, dataInicio, dataFim)
         .then(result => {
           console.log('[TOTVS] Extração finalizada:', result);
         })

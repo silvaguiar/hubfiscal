@@ -39,7 +39,8 @@ class TotvsService {
     console.log(line.trim());
   }
 
-  async extrair(empresaId, dataReferencia, logId = null) {
+  async extrair(empresaId, dataInicio, dataFim, logId = null) {
+    const dataReferencia = `${dataInicio} a ${dataFim}`;
     this.logId = logId || this.logId;
     if (fs.existsSync(this.logPath)) fs.unlinkSync(this.logPath);
     
@@ -102,18 +103,8 @@ class TotvsService {
     };
 
     const client = new TotvsClient(config);
-    let startDate, endDate;
-    if (dataReferencia.length === 10) {
-      // É um dia específico (YYYY-MM-DD)
-      startDate = `${dataReferencia}T00:00:00.000Z`;
-      endDate = `${dataReferencia}T23:59:59.999Z`;
-    } else {
-      // É um mês inteiro (YYYY-MM)
-      const [ano, mes] = dataReferencia.split('-');
-      const ultimoDia = new Date(ano, mes, 0).getDate();
-      startDate = `${dataReferencia}-01T00:00:00.000Z`;
-      endDate = `${dataReferencia}-${ultimoDia}T23:59:59.999Z`;
-    }
+    const startDate = `${dataInicio}T00:00:00.000Z`;
+    const endDate = `${dataFim}T23:59:59.999Z`;
 
     const labelLog = isGlobal ? 'TODAS AS EMPRESAS ATIVAS' : empresas[0].razao_social;
     const startTime = Date.now();
@@ -352,7 +343,12 @@ class TotvsService {
 
     const client = new TotvsClient(config);
     let startDate, endDate;
-    if (dataReferencia.length === 10) {
+    if (dataReferencia.includes(' a ')) {
+      // Formato intervalo: "YYYY-MM-DD a YYYY-MM-DD"
+      const [ini, fim] = dataReferencia.split(' a ');
+      startDate = `${ini}T00:00:00.000Z`;
+      endDate = `${fim}T23:59:59.999Z`;
+    } else if (dataReferencia.length === 10) {
       startDate = `${dataReferencia}T00:00:00.000Z`;
       endDate = `${dataReferencia}T23:59:59.999Z`;
     } else {
