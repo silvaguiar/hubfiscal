@@ -219,18 +219,18 @@ module.exports = function (db, upload) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  router.delete('/notas/:id', requireModulo('notas', 'manage'), async (req, res) => {
-    try {
-      await db.deleteNota(parseInt(req.params.id));
-      res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-  });
-
   router.delete('/notas/purgar-enviadas', requireModulo('notas', 'manage'), express.json(), async (req, res) => {
     try {
       const { empresaId } = req.body;
       const total = await db.purgarNotasEnviadas(empresaId ? parseInt(empresaId) : null);
       res.json({ success: true, deletadas: total });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  router.delete('/notas/:id', requireModulo('notas', 'manage'), async (req, res) => {
+    try {
+      await db.deleteNota(parseInt(req.params.id));
+      res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
