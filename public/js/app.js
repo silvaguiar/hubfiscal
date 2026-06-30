@@ -1095,6 +1095,32 @@ const app = {
     } catch (err) { this.toast('Erro ao resetar empresa', 'error'); }
   },
 
+  async purgarNotasEnviadas() {
+    const empresaEl = document.getElementById('dominioEmpresa');
+    const empresaId = empresaEl ? empresaEl.value : '';
+    const escopo = empresaId
+      ? `da empresa "${empresaEl.options[empresaEl.selectedIndex].text}"`
+      : 'de TODAS as empresas';
+
+    if (!confirm(`⚠️ ATENÇÃO: Esta ação é IRREVERSÍVEL.\n\nSerão excluídas permanentemente todas as notas já enviadas ao Domínio ${escopo}.\n\nIsso libera espaço no banco de dados. As notas pendentes NÃO serão afetadas.\n\nDeseja continuar?`)) return;
+
+    try {
+      const res = await fetch('/api/notas/purgar-enviadas', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresaId: empresaId || null })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.toast(`✅ ${data.deletadas} nota(s) enviadas removidas com sucesso.`, 'success');
+        this.loadDominioPage();
+      } else {
+        this.toast(data.error || 'Erro ao purgar notas', 'error');
+      }
+    } catch (err) { this.toast('Erro ao purgar notas enviadas', 'error'); }
+  },
+
   async enviarDominio(reenviar = false) {
     const empresaId = document.getElementById('dominioEmpresa').value;
     if (!empresaId) return this.toast('Selecione uma empresa', 'error');

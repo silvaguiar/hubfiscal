@@ -621,6 +621,9 @@
           <button class="btn" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171" onclick="app.resetarDominioEmpresa()" title="Reseta todas as notas da empresa para pendente — use quando a chave de integração estava errada">
             <span class="material-icons-round">restart_alt</span>Forçar Reenvio Total
           </button>
+          <button class="btn" style="background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.4);color:#f87171;font-weight:700" onclick="app.purgarNotasEnviadas()" title="Remove permanentemente as notas já enviadas ao Domínio para liberar espaço no banco">
+            <span class="material-icons-round">delete_sweep</span>Purgar Notas Enviadas
+          </button>
         </div>
         <div id="dominioLogTerminal" class="totvs-log-terminal" style="margin-top:16px"></div>
       </div>

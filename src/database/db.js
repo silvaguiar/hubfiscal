@@ -401,6 +401,19 @@ async function updateDominioStatus(notaId, status, erro = null, batchId = null) 
   `, [status, now, erro || '', batchId, notaId]);
 }
 
+async function purgarNotasEnviadas(empresaId = null) {
+  if (empresaId) {
+    const result = await pool.query({
+      text: `DELETE FROM notas_fiscais WHERE empresa_id = $1 AND dominio_status = 'enviado'`,
+      values: [empresaId]
+    });
+    return result.rowCount;
+  } else {
+    const result = await pool.query(`DELETE FROM notas_fiscais WHERE dominio_status = 'enviado'`);
+    return result.rowCount;
+  }
+}
+
 async function resetarDominioEmpresa(empresaId) {
   const result = await pool.query({
     text: `UPDATE notas_fiscais SET dominio_status = 'pendente', dominio_enviado_em = NULL, dominio_erro = NULL, dominio_batch_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE empresa_id = $1 AND dominio_status IN ('enviado', 'erro', 'enviando')`,
@@ -700,6 +713,7 @@ async function getClienteUso(id) {
 
 module.exports = {
   initialize, getDb, getConfig, saveConfig, saveTotvsGlobalConfig, updateUltimoNSU, getEmpresas, getMatrizes, getEmpresaById, getEmpresaByCnpj, createEmpresa, updateEmpresa, deleteEmpresa, updateEmpresaNSU, updateEmpresaCertificado, updateEmpresaSenha, insertNota, insertNotas, getNotas, getNotaById, getNotaByChave, deleteNota, getEstatisticas, getAllNotasForExport, getUfConfigs, saveUfConfig, updateDominioStatus, resetarDominioEmpresa, getNotasParaDominio, getDominioStats, saveDominioGlobalConfig, getUsuarios, getUsuarioById, getUsuarioByEmail, createUsuario, updateUsuario, deleteUsuario, registrarLogin, getAgendamentos, getAgendamentoById, createAgendamento, updateAgendamento, updateAgendamentoStatus, deleteAgendamento, registrarLogExecucao, updateLogExecucao, getLogsExecucao, limparLogsExecucao, createTotvsJob, getTotvsJobById, getNextTotvsJob, updateTotvsJob, listTotvsJobs, runSql, saveDb, updateEmpresaTokens, updateGlobalTokens,
+  purgarNotasEnviadas,
   getPlanos, getPlanoById, createPlano, updatePlano, deletePlano,
   getClientes, getClienteById, createCliente, updateCliente, deleteCliente, getClienteUso
 };
