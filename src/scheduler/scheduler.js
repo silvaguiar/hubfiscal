@@ -19,6 +19,21 @@ class Scheduler {
   async inicializar() {
     console.log('⏰ Iniciando motor de agendamento...');
     await this.recarregar();
+    this._registrarPurgeAutomatico();
+  }
+
+  _registrarPurgeAutomatico() {
+    // Dias 1 e 16 de cada mês às 02:00 — exclui notas enviadas há mais de 15 dias
+    cron.schedule('0 2 1,16 * *', async () => {
+      try {
+        const total = await this.db.purgarNotasEnviadas();
+        console.log(`🧹 [AUTO-PURGE] ${total} nota(s) enviadas removidas automaticamente.`);
+      } catch (err) {
+        console.error('❌ [AUTO-PURGE] Erro na limpeza automática:', err.message);
+      }
+    }, { scheduled: true, timezone: 'America/Sao_Paulo' });
+
+    console.log('🧹 [AUTO-PURGE] Limpeza automática agendada (dias 1 e 16 às 02:00).');
   }
 
   /**
